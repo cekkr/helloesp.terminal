@@ -77,7 +77,7 @@ class SerialInterface(Gtk.Window):
             try:
                 port = self.port_combo.get_active_text()
                 if port:
-                    self.serial_conn = serial.Serial(port, 9600, timeout=0)
+                    self.serial_conn = serial.Serial(port, 115200, timeout=0)
                     self.connect_button.set_label("Disconnetti")
                     self.append_terminal("Connesso a " + port + "\n")
                     GLib.timeout_add(100, self.read_serial)
