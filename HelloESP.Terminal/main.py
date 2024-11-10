@@ -5,6 +5,7 @@ from gi.repository import Gtk, GLib
 import serial
 import serial.tools.list_ports
 
+from transfer_file import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
