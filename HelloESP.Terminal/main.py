@@ -4,9 +4,8 @@ gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
 import serial
 import serial.tools.list_ports
-import os
-from transfer_file import *
 
+from transfer_file import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
@@ -301,7 +300,8 @@ class SerialInterface(Gtk.Window):
         self.status_bar.pop(context_id)
         self.status_bar.push(context_id, message)
 
-    # ... resto della classe esistente ...
+        # ... resto della classe esistente ...
+
     def refresh_ports(self):
         self.port_combo.remove_all()
         ports = serial.tools.list_ports.comports()
@@ -350,7 +350,22 @@ class SerialInterface(Gtk.Window):
             try:
                 if self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
-                    text = data.decode()
+                    self.append_terminal(f"Ricevuto: {data.decode()}\n")
+            except serial.SerialException as e:
+                self.append_terminal(f"Errore di lettura: {str(e)}\n")
+                self.serial_conn.close()
+                self.serial_conn = None
+                self.connect_button.set_label("Connetti")
+                return False
+            return True
+        return False
+
+    def append_terminal(self, text):
+        end_iter = self.terminal_buffer.get_end_iter()
+        self.terminal_buffer.insert(end_iter, text)
+        # Auto-scroll
+        self.terminal.scroll_to_iter(self.terminal_buffer.get_end_iter(), 0.0, False, 0.0, 0.0)
+
 
 def main():
     win = SerialInterface()
