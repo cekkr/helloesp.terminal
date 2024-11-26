@@ -56,7 +56,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
 
     while (time.time() - start_time) < timeout:
         if ser.in_waiting:
-            line = ser.readline().decode('utf-8').strip()
+            line = ser.readline().decode('ascii').strip()
             if line.startswith("OK:"):
                 return True, line[3:].strip()
             elif line.startswith("ERROR:"):
@@ -93,7 +93,7 @@ def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, st
 
         # First check if file exists
         command = f"$$$CHECK_FILE$$${filename}\n"
-        ser.write(command.encode('utf-8'))
+        ser.write(command.encode('ascii'))
         ser.flush()
 
         success, message = wait_for_response(ser)
@@ -108,7 +108,7 @@ def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, st
 
         # Send write command with filename, size and hash
         command = f"$$$WRITE_FILE$$${filename},{len(data)},{file_hash}\n"
-        ser.write(command.encode('utf-8'))
+        ser.write(command.encode('ascii'))
         ser.flush()
 
         # Wait for ready signal
@@ -152,7 +152,7 @@ def read_file(ser: serial.Serial, filename: str) -> bytes:
         validate_filename(filename)
 
         command = f"$$$READ_FILE$$${filename}\n"
-        ser.write(command.encode('utf-8'))
+        ser.write(command.encode('ascii'))
         ser.flush()
 
         # First response should contain file size and hash
@@ -213,8 +213,7 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
     """
     try:
         command = "$$$LIST_FILES$$$\n"
-        ser.flush()
-        ser.write(command.encode('utf-8'))
+        ser.write(command.encode('ascii'))
         ser.flush()
 
         success, files_str = wait_for_response(ser)
@@ -254,7 +253,7 @@ def delete_file(ser: serial.Serial, filename: str) -> Tuple[bool, str]:
         validate_filename(filename)
 
         command = f"$$$DELETE_FILE$$${filename}\n"
-        ser.write(command.encode('utf-8'))
+        ser.write(command.encode('ascii'))
         ser.flush()
 
         return wait_for_response(ser)

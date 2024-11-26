@@ -356,7 +356,8 @@ class SerialInterface(Gtk.Window):
             text = self.input_entry.get_text()
             if text:
                 try:
-                    self.serial_conn.write((text + "\n").encode())
+                    data = (text + "\n").encode()
+                    self.serial_conn.write(data)
                     self.append_terminal(f"Inviato: {text}\n")
                     self.input_entry.set_text("")
                 except serial.SerialException as e:
@@ -367,7 +368,7 @@ class SerialInterface(Gtk.Window):
             try:
                 if self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
-                    self.append_terminal(f"Ricevuto: {data.decode()}\n")
+                    self.append_terminal(f"Ricevuto: {data.decode('ascii')}\n")
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
                 self.serial_conn.close()
