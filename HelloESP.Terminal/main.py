@@ -58,8 +58,25 @@ class SerialInterface(Gtk.Window):
         self.terminal.set_editable(False)
         self.terminal.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.terminal_buffer = self.terminal.get_buffer()
+
         # Imposta font monospace per il terminale
-        self.terminal.override_font(Pango.FontDescription("monospace"))
+        # Create a CSS provider
+        css_provider = Gtk.CssProvider()
+
+        # Define the CSS with the font settings
+        css = b"""
+        terminal {
+            font-family: monospace;
+        }
+        """
+
+        # Load the CSS
+        css_provider.load_from_data(css)
+
+        # Apply the CSS to the terminal widget
+        style_context = self.terminal.get_style_context()
+        style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
         scrolled_window.add(self.terminal)
 
         # Area input

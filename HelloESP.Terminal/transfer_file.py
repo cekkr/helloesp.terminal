@@ -213,6 +213,7 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
     """
     try:
         command = "$$$LIST_FILES$$$\n"
+        ser.flush()
         ser.write(command.encode('utf-8'))
         ser.flush()
 
