@@ -100,7 +100,7 @@ def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, st
         if success:
             # File exists, parse size
             try:
-                existing_size = int(message)
+                existing_size = int(message.split(':')[0])
                 if existing_size == len(data):
                     return False, f"File exists with same size ({existing_size} bytes)"
             except ValueError:
@@ -114,6 +114,7 @@ def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, st
         # Wait for ready signal
         success, message = wait_for_response(ser)
         if not success:
+            print("Failed write file: ", message)
             return False, message
 
         # Send file data in chunks
