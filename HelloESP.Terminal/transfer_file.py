@@ -42,7 +42,7 @@ def validate_filename(filename: str) -> None:
 
 def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, str]:
     """
-    Wait for and parse response from device.
+    Wait for and parse response from device, handling info/warning/error logs.
 
     Args:
         ser: Serial connection object
@@ -56,11 +56,24 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
 
     while (time.time() - start_time) < timeout:
         if ser.in_waiting:
-            line = ser.readline().decode('ascii').strip()
+            try:
+                line = ser.readline().decode('ascii').strip()
+            except Exception as e:
+                print("Debug read exception")
+                raise e
+
+            # Handle different log levels while continuing to wait for actual response
+            if line.startswith(("INFO:", "WARNING:", "ERROR:")):
+                log_level, message = line.split(":", 1)
+                print(f"[{log_level}] {message.strip()}")
+                continue
+
+            # Process actual responses
             if line.startswith("OK:"):
                 return True, line[3:].strip()
             elif line.startswith("ERROR:"):
                 return False, line[6:].strip()
+
         time.sleep(0.1)
 
     raise SerialCommandError("Timeout waiting for response")
@@ -232,6 +245,9 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
         success, files_str = wait_for_response(ser)
         if not success:
             raise SerialCommandError(f"Failed to list files: {files_str}")
+
+        split = files_str.split(':')
+        files_str = split[1]
 
         # Parse filename,size pairs
         files = []
