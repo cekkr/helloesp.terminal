@@ -63,7 +63,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
                 raise e
 
             # Handle different log levels while continuing to wait for actual response
-            if line.startswith(("INFO:", "WARNING:", "ERROR:")):
+            if line.startswith(("INFO:", "WARNING:", "ERROR:", '\x1b')):
                 log_level, message = line.split(":", 1)
                 print(f"[{log_level}] {message.strip()}")
                 continue
