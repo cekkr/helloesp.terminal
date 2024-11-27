@@ -67,76 +67,88 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
 
 
 def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, str]:
-    """
-    Write data to a file on the device.
-
-    Args:
-        ser: Serial connection object
-        filename: Name of the file to write
-        data: Binary data to write to the file
-
-    Returns:
-        Tuple of (success, message)
-    """
+    """Write data to device with chunk verification."""
     try:
-        # Validate filename and file size
         validate_filename(filename)
+        if not validate_file_size(data):
+            return False, f"Invalid file size (max {MAX_FILE_SIZE} bytes)"
 
-        if len(data) > MAX_FILE_SIZE:
-            raise FileValidationError(f"File too large (max {MAX_FILE_SIZE} bytes)")
-
-        if len(data) == 0:
-            raise FileValidationError("Cannot write empty file")
-
-        # Calculate file hash for verification
         file_hash = hashlib.md5(data).hexdigest()
+        if not check_existing_file(ser, filename, len(data)):
+            return False, "File exists with same size"
 
-        # First check if file exists
-        command = f"$$$CHECK_FILE$$${filename}\n"
-        ser.write(command.encode('ascii'))
-        ser.flush()
+        # Inizia trasferimento
+        if not send_write_command(ser, filename, len(data), file_hash):
+            return False, "Failed to initiate transfer"
 
-        success, message = wait_for_response(ser)
-        if success:
-            # File exists, parse size
-            try:
-                existing_size = int(message.split(':')[0])
-                if existing_size == len(data):
-                    return False, f"File exists with same size ({existing_size} bytes)"
-            except ValueError:
-                pass
-
-        # Send write command with filename, size and hash
-        command = f"$$$WRITE_FILE$$${filename},{len(data)},{file_hash}\n"
-        ser.write(command.encode('ascii'))
-        ser.flush()
-
-        # Wait for ready signal
-        success, message = wait_for_response(ser)
-        if not success:
-            print("Failed write file: ", message)
-            return False, message
-
-        # Send file data in chunks
+        # Suddividi in chunk e verifica
         chunk_size = 1024
-        for i in range(0, len(data), chunk_size):
-            chunk = data[i:i + chunk_size]
+        total_chunks = (len(data) + chunk_size - 1) // chunk_size
+
+        for chunk_num in range(total_chunks):
+            start = chunk_num * chunk_size
+            end = min(start + chunk_size, len(data))
+            chunk = data[start:end]
+
+            # Calcola hash del chunk
+            chunk_hash = hashlib.md5(chunk).hexdigest()
+
+            # Invia dimensione chunk e hash
+            command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
+            ser.write(command.encode('ascii'))
+            ser.flush()
+
+            success, message = wait_for_response(ser)
+            if not success:
+                return False, f"Chunk prep failed: {message}"
+
+            # Invia chunk
             ser.write(chunk)
             ser.flush()
 
-            # Optional: wait for chunk acknowledgment
+            # Verifica ricezione
             success, message = wait_for_response(ser)
             if not success:
-                return False, f"Error writing chunk: {message}"
+                return False, f"Chunk verification failed: {message}"
 
-        # Wait for final verification
+        # Verifica finale
+        command = "$$$VERIFY_FILE$$$\n"
+        ser.write(command.encode('ascii'))
         return wait_for_response(ser)
 
-    except (serial.SerialException, FileValidationError) as e:
-        raise SerialCommandError(str(e))
     except Exception as e:
-        raise SerialCommandError(f"Error writing file: {str(e)}")
+        return False, f"Transfer error: {str(e)}"
 
+
+def validate_file_size(data: bytes) -> bool:
+    """Validate file size constraints."""
+    return 0 < len(data) <= MAX_FILE_SIZE
+
+
+def check_existing_file(ser: serial.Serial, filename: str, size: int) -> bool:
+    """Check if file exists with same size."""
+    command = f"$$$CHECK_FILE$$${filename}\n"
+    ser.write(command.encode('ascii'))
+    ser.flush()
+
+    success, message = wait_for_response(ser)
+    if success:
+        try:
+            existing_size = int(message.split(':')[0])
+            return existing_size != size
+        except ValueError:
+            return True
+    return True
+
+
+def send_write_command(ser: serial.Serial, filename: str, size: int, file_hash: str) -> bool:
+    """Send initial write command."""
+    command = f"$$$WRITE_FILE$$${filename},{size},{file_hash}\n"
+    ser.write(command.encode('ascii'))
+    ser.flush()
+
+    success, message = wait_for_response(ser)
+    return success
 
 def read_file(ser: serial.Serial, filename: str) -> bytes:
     """
