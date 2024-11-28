@@ -56,9 +56,10 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
     while (time.time() - start_time) < timeout or timeout == -1:
         if ser.in_waiting:
             try:
-                line = ser.readline().decode('ascii')
+                data = ser.readline()
+                line = data.decode('ascii')
             except Exception as e:
-                print("Debug read exception")
+                print("Debug read exception: ", data)
                 raise e
 
             # Handle different log levels while continuing to wait for actual response
@@ -86,8 +87,8 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
 
 
 def send_buffer(ser: serial.Serial, buffer):
+    ser.write("$$$PING$$$\n".encode('ascii'))
     ser.flush()
-    ser.write("$$$PING$$$".encode('ascii'))
     success, msg = wait_for_response(ser)
 
     if not success:
@@ -155,7 +156,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
-        ser.write(command.encode('ascii'))
+        send_buffer(command.encode('ascii'))
         return wait_for_response(ser)
 
     except Exception as e:

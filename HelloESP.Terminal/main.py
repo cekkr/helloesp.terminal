@@ -376,13 +376,18 @@ class SerialInterface(Gtk.Window):
             try:
                 if self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
-                    self.append_terminal(f"Ricevuto: {data.decode('ascii')}\n")
+                    rec = data.decode('ascii')
+                    self.append_terminal(f"Ricevuto: {rec}\n")
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
                 self.serial_conn.close()
                 self.serial_conn = None
                 self.connect_button.set_label("Connetti")
                 return False
+            except Exception as e:
+                print("Data undecoded: ", data)
+                return False
+
             return True
         return False
 
