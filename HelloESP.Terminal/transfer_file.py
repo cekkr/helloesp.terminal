@@ -93,6 +93,8 @@ def send_buffer(ser: serial.Serial, buffer):
 
     if not success:
         print("Ping unsuccessful: " + msg)
+    else:
+        print("PONG!")
 
     ser.write(buffer.encode('ascii'))
     ser.flush()
