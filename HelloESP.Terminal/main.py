@@ -215,7 +215,7 @@ class SerialInterface(Gtk.Window):
                 with open(filename, 'rb') as f:
                     data = f.read()
                     base_name = os.path.basename(filename)
-                    success, msg = write_file(self.serial_conn, base_name, data)
+                    success, msg = write_file(self, base_name, data)
                     if success:
                         self.show_status(f"File {base_name} caricato con successo")
                         self.append_terminal(f"File caricato: {base_name}\n")
@@ -390,7 +390,6 @@ def main():
     win.connect("destroy", Gtk.main_quit)
     win.show_all()
     Gtk.main()
-
 
 if __name__ == "__main__":
     main()

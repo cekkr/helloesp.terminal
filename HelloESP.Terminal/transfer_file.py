@@ -3,6 +3,7 @@ import os
 from typing import Optional, Tuple, List
 import serial
 import hashlib
+from main import *
 
 
 class SerialCommandError(Exception):
@@ -40,7 +41,7 @@ def validate_filename(filename: str) -> None:
         raise FileValidationError("Filename cannot start with dot or space")
 
 
-def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, str]:
+def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str]:
     """
     Wait for and parse response from device, handling info/warning/error logs.
 
@@ -52,9 +53,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
         Tuple of (success, message)
     """
     start_time = time.time()
-    response = ""
-
-    while (time.time() - start_time) < timeout:
+    while (time.time() - start_time) < timeout or timeout == -1:
         if ser.in_waiting:
             try:
                 line = ser.readline().decode('ascii').strip()
@@ -63,9 +62,12 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
                 raise e
 
             # Handle different log levels while continuing to wait for actual response
-            if line.startswith(("INFO:", "WARNING:", "ERROR:", '\x1b')):
-                log_level, message = line.split(":", 1)
-                print(f"[{log_level}] {message.strip()}")
+            if line.startswith('\x1b'):
+                try:
+                    log_level, message = line.split(":", 1)
+                    print(f"[{log_level}] {message.strip()}")
+                except Exception as e:
+                    print("Received void")
                 continue
 
             # Process actual responses
@@ -79,8 +81,11 @@ def wait_for_response(ser: serial.Serial, timeout: float = 2.0) -> Tuple[bool, s
     raise SerialCommandError("Timeout waiting for response")
 
 
-def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, str]:
+def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tuple[bool, str]:
     """Write data to device with chunk verification."""
+
+    ser = serInterface.serial_conn
+
     try:
         validate_filename(filename)
         if not validate_file_size(data):
@@ -91,8 +96,17 @@ def write_file(ser: serial.Serial, filename: str, data: bytes) -> Tuple[bool, st
             return False, "File exists with same size"
 
         # Inizia trasferimento
-        if not send_write_command(ser, filename, len(data), file_hash):
-            return False, "Failed to initiate transfer"
+        success, response = send_write_command(ser, filename, len(data), file_hash)
+        if not success:
+            return False, "Not ready for write: " + response
+
+        '''
+        success, status = wait_for_response(ser)
+        if not success:
+            return False, "Not ready for chunks: " + status
+
+        serInterface.append_terminal("Ready for chunks: " + status)
+        '''
 
         # Suddividi in chunk e verifica
         chunk_size = 1024
