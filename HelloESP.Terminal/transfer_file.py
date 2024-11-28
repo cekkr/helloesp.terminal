@@ -68,18 +68,33 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
                     print(f"[{log_level}] {message.strip()}")
                 except Exception as e:
                     print("Received void")
+
+                ser.flush()
                 continue
 
             # Process actual responses
             if line.startswith("OK:"):
+                ser.flush()
                 return True, line[3:].strip()
             elif line.startswith("ERROR:"):
+                er.flush()
                 return False, line[6:].strip()
 
         time.sleep(0.1)
 
     raise SerialCommandError("Timeout waiting for response")
 
+
+def send_buffer(ser: serial.Serial, buffer):
+    ser.flush()
+    ser.write("$$$PING$$$")
+    success, msg = wait_for_response(ser)
+
+    if not success:
+        print("Ping unsuccessful: " + msg);
+
+    ser.write(buffer.encode('ascii'))
+    ser.flush()
 
 def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tuple[bool, str]:
     """Write data to device with chunk verification."""
@@ -113,6 +128,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
         total_chunks = (len(data) + chunk_size - 1) // chunk_size
 
         for chunk_num in range(total_chunks):
+            print("Writing chunk n " + str(chunk_num))
             start = chunk_num * chunk_size
             end = min(start + chunk_size, len(data))
             chunk = data[start:end]
@@ -122,8 +138,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
             # Invia dimensione chunk e hash
             command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
-            ser.write(command.encode('ascii'))
-            ser.flush()
+            send_buffer(ser, command)
 
             success, message = wait_for_response(ser)
             if not success:
@@ -155,8 +170,7 @@ def validate_file_size(data: bytes) -> bool:
 def check_existing_file(ser: serial.Serial, filename: str, size: int) -> bool:
     """Check if file exists with same size."""
     command = f"$$$CHECK_FILE$$${filename}\n"
-    ser.write(command.encode('ascii'))
-    ser.flush()
+    send_buffer(ser, command)
 
     success, message = wait_for_response(ser)
     if success:
@@ -171,11 +185,10 @@ def check_existing_file(ser: serial.Serial, filename: str, size: int) -> bool:
 def send_write_command(ser: serial.Serial, filename: str, size: int, file_hash: str) -> bool:
     """Send initial write command."""
     command = f"$$$WRITE_FILE$$${filename},{size},{file_hash}\n"
-    ser.write(command.encode('ascii'))
-    ser.flush()
+    send_buffer(ser, command)
 
     success, message = wait_for_response(ser)
-    return success
+    return success, message
 
 def read_file(ser: serial.Serial, filename: str) -> bytes:
     """
@@ -192,8 +205,7 @@ def read_file(ser: serial.Serial, filename: str) -> bytes:
         validate_filename(filename)
 
         command = f"$$$READ_FILE$$${filename}\n"
-        ser.write(command.encode('ascii'))
-        ser.flush()
+        send_buffer(ser, command)
 
         # First response should contain file size and hash
         success, info = wait_for_response(ser)
@@ -253,8 +265,7 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
     """
     try:
         command = "$$$LIST_FILES$$$\n"
-        ser.write(command.encode('ascii'))
-        ser.flush()
+        send_buffer(ser, command)
 
         success, files_str = wait_for_response(ser)
         if not success:
@@ -296,8 +307,7 @@ def delete_file(ser: serial.Serial, filename: str) -> Tuple[bool, str]:
         validate_filename(filename)
 
         command = f"$$$DELETE_FILE$$${filename}\n"
-        ser.write(command.encode('ascii'))
-        ser.flush()
+        send_buffer(ser, command)
 
         return wait_for_response(ser)
 

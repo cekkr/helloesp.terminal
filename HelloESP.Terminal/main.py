@@ -90,6 +90,10 @@ class SerialInterface(Gtk.Window):
         send_button.connect("clicked", self.on_send_clicked)
         input_box.pack_start(send_button, False, False, 0)
 
+        reset_button = Gtk.Button(label="Reset")
+        reset_button.connect("clicked", self.on_reset_clicked)
+        input_box.pack_start(reset_button, False, False, 0)
+
         # Pannello File Manager
         self.setup_file_manager()
 
@@ -362,6 +366,10 @@ class SerialInterface(Gtk.Window):
                     self.input_entry.set_text("")
                 except serial.SerialException as e:
                     self.append_terminal(f"Errore di invio: {str(e)}\n")
+
+    def on_reset_clicked(self, button):
+        buffer = self.terminal.get_buffer()
+        buffer.set_text("")
 
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
