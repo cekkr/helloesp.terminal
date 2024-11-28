@@ -56,7 +56,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
     while (time.time() - start_time) < timeout or timeout == -1:
         if ser.in_waiting:
             try:
-                line = ser.readline().decode('ascii').strip()
+                line = ser.readline().decode('ascii')
             except Exception as e:
                 print("Debug read exception")
                 raise e
@@ -77,7 +77,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
                 ser.flush()
                 return True, line[3:].strip()
             elif line.startswith("ERROR:"):
-                er.flush()
+                ser.flush()
                 return False, line[6:].strip()
 
         time.sleep(0.1)
@@ -87,11 +87,11 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
 
 def send_buffer(ser: serial.Serial, buffer):
     ser.flush()
-    ser.write("$$$PING$$$")
+    ser.write("$$$PING$$$".encode('ascii'))
     success, msg = wait_for_response(ser)
 
     if not success:
-        print("Ping unsuccessful: " + msg);
+        print("Ping unsuccessful: " + msg)
 
     ser.write(buffer.encode('ascii'))
     ser.flush()
