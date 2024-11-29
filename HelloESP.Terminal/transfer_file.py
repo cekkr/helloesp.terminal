@@ -41,7 +41,7 @@ def validate_filename(filename: str) -> None:
         raise FileValidationError("Filename cannot start with dot or space")
 
 
-def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str]:
+def wait_for_response(ser: serial.Serial, timeout: float = -1) -> Tuple[bool, str]:
     """
     Wait for and parse response from device, handling info/warning/error logs.
 
@@ -57,6 +57,7 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
         if ser.in_waiting:
             try:
                 data = ser.readline()
+                #print("serial read data: ", data)
                 line = data.decode('ascii')
             except Exception as e:
                 print("Debug read exception: ", data)
@@ -86,15 +87,16 @@ def wait_for_response(ser: serial.Serial, timeout: float = 6) -> Tuple[bool, str
     raise SerialCommandError("Timeout waiting for response")
 
 
-def send_buffer(ser: serial.Serial, buffer):
-    ser.write("$$$PING$$$\n".encode('ascii'))
-    ser.flush()
-    success, msg = wait_for_response(ser)
+def send_buffer(ser: serial.Serial, buffer, ping=True):
+    if ping:
+        ser.write("$$$PING$$$\n".encode('ascii'))
+        ser.flush()
+        success, msg = wait_for_response(ser)
 
-    if not success:
-        print("Ping unsuccessful: " + msg)
-    else:
-        print("PONG!")
+        if not success:
+            print("Ping unsuccessful: " + msg)
+        else:
+            print("PONG!")
 
     ser.write(buffer.encode('ascii'))
     ser.flush()
@@ -141,11 +143,13 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
             # Invia dimensione chunk e hash
             command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
-            send_buffer(ser, command)
+            send_buffer(ser, command, ping=False)
 
             success, message = wait_for_response(ser)
             if not success:
                 return False, f"Chunk prep failed: {message}"
+
+            print("Ready for chunk: ", message)
 
             # Invia chunk
             ser.write(chunk)
@@ -155,6 +159,8 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
             success, message = wait_for_response(ser)
             if not success:
                 return False, f"Chunk verification failed: {message}"
+            else:
+                print("Chunk sent: ", message)
 
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
