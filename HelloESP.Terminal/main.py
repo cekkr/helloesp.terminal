@@ -188,7 +188,7 @@ class SerialInterface(Gtk.Window):
         command = self.cmd_entry.get_text()
         if command:
             try:
-                success, response = execute_command(self.serial, command)
+                success, response = execute_command(self.serial_conn, command)
                 if success:
                     self.append_to_log(f"Comando eseguito: {command}\nRisposta: {response}\n")
                 else:
