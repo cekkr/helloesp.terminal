@@ -301,6 +301,44 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
         raise SerialCommandError(f"Error listing files: {str(e)}")
 
 
+def execute_command(ser: serial.Serial, command: str) -> Tuple[bool, str]:
+    """
+    Execute a generic command on the device.
+
+    Args:
+        ser: Serial connection object
+        command: Command string to execute (without $$$CMD$$$ prefix)
+
+    Returns:
+        Tuple of (success: bool, response: str)
+        success indicates if command executed successfully
+        response contains the command output or error message
+    """
+    try:
+        # Format command with proper prefix and termination
+        formatted_command = f"$$$CMD$$${command}\n"
+
+        # Send command
+        send_buffer(ser, formatted_command)
+
+        # Wait for and parse response
+        success, response = wait_for_response(ser)
+        if not success:
+            raise SerialCommandError(f"Command failed: {response}")
+
+        # Parse response - assuming similar format to LIST_FILES
+        # where response is in format "status:message"
+        split = response.split(':')
+        if len(split) != 2:
+            raise SerialCommandError(f"Invalid response format: {response}")
+
+        return True, split[1]
+
+    except serial.SerialException as e:
+        raise SerialCommandError(f"Serial communication error: {str(e)}")
+    except Exception as e:
+        raise SerialCommandError(f"Error executing command: {str(e)}")
+
 def delete_file(ser: serial.Serial, filename: str) -> Tuple[bool, str]:
     """
     Delete a file from the device.

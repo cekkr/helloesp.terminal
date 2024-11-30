@@ -94,6 +94,22 @@ class SerialInterface(Gtk.Window):
         reset_button.connect("clicked", self.on_reset_clicked)
         input_box.pack_start(reset_button, False, False, 0)
 
+        # Area comandi
+        cmd_box = Gtk.Box(spacing=6)
+        vbox.pack_start(cmd_box, False, False, 0)
+
+        # Label per distinguere l'area comandi
+        cmd_label = Gtk.Label(label="Comandi:")
+        cmd_box.pack_start(cmd_label, False, False, 5)
+
+        self.cmd_entry = Gtk.Entry()
+        self.cmd_entry.set_placeholder_text("Inserisci comando...")  # Testo suggerimento
+        cmd_box.pack_start(self.cmd_entry, True, True, 0)
+
+        execute_button = Gtk.Button(label="Esegui")
+        execute_button.connect("clicked", self.on_execute_clicked)
+        cmd_box.pack_start(execute_button, False, False, 0)
+
         # Pannello File Manager
         self.setup_file_manager()
 
@@ -167,6 +183,20 @@ class SerialInterface(Gtk.Window):
                 self.refresh_file_list()
         else:
             self.main_paned.get_child2().hide()
+
+    def on_execute_clicked(self, button):
+        command = self.cmd_entry.get_text()
+        if command:
+            try:
+                success, response = execute_command(self.serial, command)
+                if success:
+                    self.append_to_log(f"Comando eseguito: {command}\nRisposta: {response}\n")
+                else:
+                    self.append_to_log(f"Errore nell'esecuzione del comando: {response}\n")
+            except SerialCommandError as e:
+                self.append_to_log(f"Errore: {str(e)}\n")
+            finally:
+                self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
 
     def refresh_file_list(self):
         """Aggiorna la lista dei file sul device"""
