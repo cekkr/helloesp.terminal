@@ -190,11 +190,11 @@ class SerialInterface(Gtk.Window):
             try:
                 success, response = execute_command(self.serial_conn, command)
                 if success:
-                    self.append_to_log(f"Comando eseguito: {command}\nRisposta: {response}\n")
+                    self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
                 else:
-                    self.append_to_log(f"Errore nell'esecuzione del comando: {response}\n")
+                    self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
             except SerialCommandError as e:
-                self.append_to_log(f"Errore: {str(e)}\n")
+                self.append_terminal(f"Errore: {str(e)}\n")
             finally:
                 self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
 

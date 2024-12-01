@@ -328,11 +328,14 @@ def execute_command(ser: serial.Serial, command: str) -> Tuple[bool, str]:
 
         # Parse response - assuming similar format to LIST_FILES
         # where response is in format "status:message"
-        split = response.split(':')
-        if len(split) != 2:
-            raise SerialCommandError(f"Invalid response format: {response}")
-
-        return True, split[1]
+        if False:
+            split = response.split(':')
+            if len(split) != 2:
+                raise SerialCommandError(f"Invalid response format: {response}")
+            return True, split[1]
+        else: # simple response output
+            print(response)
+            return True, response
 
     except serial.SerialException as e:
         raise SerialCommandError(f"Serial communication error: {str(e)}")
