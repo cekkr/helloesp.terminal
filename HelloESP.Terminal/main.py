@@ -189,13 +189,18 @@ class SerialInterface(Gtk.Window):
         command = self.cmd_entry.get_text()
         if command:
             try:
-                success, response = execute_command(self.serial_conn, command)
+                success, response = execute_command(self, command)
                 if success:
                     self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
                 else:
                     self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
             except SerialCommandError as e:
-                self.append_terminal(f"Errore: {str(e)}\n")
+                self.append_terminal(f"Errore seriale: {str(e)}\n")
+                if __debug__:
+                    raise e
+            except Exception as e:
+                if __debug__:
+                    raise e
             finally:
                 self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
 
@@ -382,6 +387,7 @@ class SerialInterface(Gtk.Window):
     def update_tracing(self, line):
         if self.tracer is not None:
             self.tracer.read_line(line)
+            #print("tracer.read_line called")
 
     def on_connect_clicked(self, button):
         if self.serial_conn is None:

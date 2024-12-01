@@ -119,28 +119,38 @@ class ESP32BacktraceParser:
                 self.logger.error(f"Errore generico: {e}")
                 continue
 
-    def read_line(self, line):
-        # Verifica se inizia un backtrace
-        if "Backtrace:" in line:
-            self.backtrace_mode = True
-            self.current_backtrace = []
-            return
+    def read_line(self, input):
+        lines = input.split('\n')
 
-        if self.backtrace_mode:
-            # Analizza la riga del backtrace
-            frame_info = self.parse_backtrace_line(line)
+        for line in lines:
+            # Verifica se inizia un backtrace
+            if "Backtrace:" in line:
+                self.backtrace_mode = True
+                self.current_backtrace = []
+                return
 
-            if frame_info:
-                # Ottieni informazioni sul codice sorgente
-                source_info = self.get_source_location(frame_info['address'])
-                if source_info:
-                    frame_info.update(source_info)
-                self.current_backtrace.append(frame_info)
-            else:
-                # Se la riga non corrisponde al pattern, il backtrace è finito
-                if self.current_backtrace:
-                    self.process_complete_backtrace(self.current_backtrace)
-                self.backtrace_mode = False
+            if self.backtrace_mode:
+                # Analizza la riga del backtrace
+                frame_info = self.parse_backtrace_line(line)
+
+                if frame_info:
+                    # Ottieni informazioni sul codice sorgente
+                    source_info = self.get_source_location(frame_info['address'])
+                    if source_info:
+                        frame_info.update(source_info)
+                    self.current_backtrace.append(frame_info)
+                else:
+                    # Se la riga non corrisponde al pattern, il backtrace è finito
+                    if self.current_backtrace:
+                        self.process_complete_backtrace(self.current_backtrace)
+                    self.backtrace_mode = False
+
+                if not line.strip():
+                    self.process_complete_backtrace()
+
+    def log(self, what):
+        print(what)
+        #logger.error(what)
 
     def process_complete_backtrace(self, backtrace: List[Dict]):
         """
@@ -149,13 +159,13 @@ class ESP32BacktraceParser:
         Args:
             backtrace: Lista di frame del backtrace
         """
-        self.logger.error("=== Backtrace Completo ===")
+        self.log("=== Backtrace Completo ===")
         for frame in backtrace:
             if 'function' in frame and 'file' in frame and 'line' in frame:
-                self.logger.error(
+                self.log(
                     f"Frame {frame['frame']}: {frame['function']} "
                     f"at {frame['file']}:{frame['line']} ({frame['address']})"
                 )
             else:
-                self.logger.error(f"Frame {frame['frame']}: {frame['address']}")
-        self.logger.error("========================")
+                self.log(f"Frame {frame['frame']}: {frame['address']}")
+        self.log("========================")

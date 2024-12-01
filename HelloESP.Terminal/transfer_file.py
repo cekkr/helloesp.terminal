@@ -41,7 +41,7 @@ def validate_filename(filename: str) -> None:
         raise FileValidationError("Filename cannot start with dot or space")
 
 
-def wait_for_response(ser: serial.Serial, timeout: float = -1) -> Tuple[bool, str]:
+def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : SerialInterface = None) -> Tuple[bool, str]:
     """
     Wait for and parse response from device, handling info/warning/error logs.
 
@@ -52,6 +52,10 @@ def wait_for_response(ser: serial.Serial, timeout: float = -1) -> Tuple[bool, st
     Returns:
         Tuple of (success, message)
     """
+
+    if serInt is not None:
+        ser = serInt.serial_conn
+
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
         if ser.in_waiting:
@@ -59,6 +63,9 @@ def wait_for_response(ser: serial.Serial, timeout: float = -1) -> Tuple[bool, st
                 data = ser.readline()
                 #print("serial read data: ", data)
                 line = data.decode('ascii')
+
+                if serInt is not None:
+                    serInt.update_tracing(line)
             except Exception as e:
                 print("Debug read exception: ", data)
                 raise e
@@ -301,7 +308,7 @@ def list_files(ser: serial.Serial) -> List[Tuple[str, int]]:
         raise SerialCommandError(f"Error listing files: {str(e)}")
 
 
-def execute_command(ser: serial.Serial, command: str) -> Tuple[bool, str]:
+def execute_command(serInt: SerialInterface, command: str) -> Tuple[bool, str]:
     """
     Execute a generic command on the device.
 
@@ -314,6 +321,9 @@ def execute_command(ser: serial.Serial, command: str) -> Tuple[bool, str]:
         success indicates if command executed successfully
         response contains the command output or error message
     """
+
+    ser = serInt.serial_conn
+
     try:
         # Format command with proper prefix and termination
         formatted_command = f"$$$CMD$$${command}\n"
@@ -322,7 +332,7 @@ def execute_command(ser: serial.Serial, command: str) -> Tuple[bool, str]:
         send_buffer(ser, formatted_command)
 
         # Wait for and parse response
-        success, response = wait_for_response(ser)
+        success, response = wait_for_response(serInt=serInt)
         if not success:
             raise SerialCommandError(f"Command failed: {response}")
 
