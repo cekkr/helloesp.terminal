@@ -1,3 +1,5 @@
+import datetime
+
 import serial
 import re
 import logging
@@ -23,6 +25,14 @@ class ESP32BacktraceParser:
         self.addr2line_path = None
         self.elf_file = None
 
+        self.crash_patterns = [
+            "Backtrace:",
+            "Guru Meditation Error",
+            "Panic",
+            "Assert failed:",
+            "Fatal exception"
+        ]
+
     def set_debug_files(self, addr2line_path: str, elf_file: str):
         """
         Imposta i file necessari per il debug simbolico.
@@ -36,6 +46,8 @@ class ESP32BacktraceParser:
 
         self.backtrace_mode = False
         self.current_backtrace: List[Dict] = []
+
+        self.line_buffer = []
 
     def parse_backtrace_line(self, line: str) -> Optional[Dict[str, str]]:
         """
@@ -57,6 +69,59 @@ class ESP32BacktraceParser:
                 'address': match.group(3)
             }
         return None
+
+    def analyze_buffer_for_crash(self) -> Optional[Dict]:
+        """
+        Analizza il buffer circolare per trovare crash e backtrace completi.
+
+        Returns:
+            Dictionary contenente le informazioni sul crash e il backtrace
+        """
+        crash_info = {
+            'timestamp': datetime.datetime.now(),
+            'crash_type': None,
+            'crash_message': None,
+            'context_before': [],
+            'backtrace': [],
+            'context_after': []
+        }
+
+        # Cerca all'indietro nel buffer per trovare l'inizio del crash
+        buffer_list = list(self.line_buffer)
+        crash_start_idx = None
+
+        for i, line in enumerate(buffer_list):
+            for pattern in self.crash_patterns:
+                if pattern in line:
+                    crash_start_idx = i
+                    crash_info['crash_type'] = pattern.rstrip(':')
+                    crash_info['crash_message'] = line.strip()
+                    break
+            if crash_start_idx is not None:
+                break
+
+        if crash_start_idx is None:
+            return None
+
+        # Raccogli il contesto prima del crash
+        crash_info['context_before'] = buffer_list[max(0, crash_start_idx - 5):crash_start_idx]
+
+        # Analizza il backtrace e il contesto dopo
+        in_backtrace = False
+        for line in buffer_list[crash_start_idx:]:
+            frame_info = self.parse_backtrace_line(line)
+            if frame_info:
+                in_backtrace = True
+                # Aggiungi informazioni sul codice sorgente se disponibili
+                source_info = self.get_source_location(frame_info['address'])
+                if source_info:
+                    frame_info.update(source_info)
+                crash_info['backtrace'].append(frame_info)
+            elif in_backtrace:
+                # Se eravamo nel backtrace e ora non lo siamo più, questo è il contesto dopo
+                crash_info['context_after'].append(line)
+
+        return crash_info if crash_info['backtrace'] else None
 
     def get_source_location(self, address: str) -> Optional[Dict[str, str]]:
         """
@@ -123,6 +188,14 @@ class ESP32BacktraceParser:
         lines = input.split('\n')
 
         for line in lines:
+            self.line_buffer.append(line)
+
+            # Verifica se c'è un crash da analizzare
+            crash_info = self.analyze_buffer_for_crash()
+            if crash_info:
+                self.process_crash(crash_info)
+
+            continue
             # Verifica se inizia un backtrace
             if "Backtrace:" in line:
                 self.backtrace_mode = True
@@ -130,6 +203,8 @@ class ESP32BacktraceParser:
                 return
 
             if self.backtrace_mode:
+                self.current_backtrace.append(line)
+
                 # Analizza la riga del backtrace
                 frame_info = self.parse_backtrace_line(line)
 
@@ -151,6 +226,38 @@ class ESP32BacktraceParser:
     def log(self, what):
         print(what)
         #logger.error(what)
+
+    def process_crash(self, crash_info: Dict):
+        """
+        Processa e logga le informazioni complete sul crash.
+
+        Args:
+            crash_info: Dictionary con tutte le informazioni sul crash
+        """
+        self.log("\n=== ESP32 Crash Detected ===")
+        self.log(f"Timestamp: {crash_info['timestamp']}")
+        self.log(f"Crash Type: {crash_info['crash_type']}")
+        self.log(f"Crash Message: {crash_info['crash_message']}")
+
+        self.log("\n--- Context Before Crash ---")
+        for line in crash_info['context_before']:
+            self.log(f"Context: {line}")
+
+        self.log("\n--- Backtrace ---")
+        for frame in crash_info['backtrace']:
+            if 'function' in frame and 'file' in frame and 'line' in frame:
+                self.log(
+                    f"Frame {frame['frame']}: {frame['function']} "
+                    f"at {frame['file']}:{frame['line']} ({frame['address']})"
+                )
+            else:
+                self.log(f"Frame {frame['frame']}: {frame['address']}")
+
+        self.log("\n--- Context After Crash ---")
+        for line in crash_info['context_after']:
+            self.log(f"Context: {line}")
+
+        self.log("=========================\n")
 
     def process_complete_backtrace(self, backtrace: List[Dict]):
         """
