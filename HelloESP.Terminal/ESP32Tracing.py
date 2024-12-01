@@ -184,18 +184,65 @@ class ESP32BacktraceParser:
                 self.logger.error(f"Errore generico: {e}")
                 continue
 
+    def parse_backtrace_line(self, line: str) -> List[Dict[str, str]]:
+        """
+        Analizza una riga di backtrace, supportando sia il formato multi-riga che quello compresso.
+
+        Args:
+            line: Riga del backtrace da analizzare
+
+        Returns:
+            Lista di dizionari contenenti le informazioni dei frame
+        """
+        frames = []
+
+        # Verifica se è una riga di backtrace compressa
+        if line.startswith('Backtrace:'):
+            # Rimuove 'Backtrace: ' dall'inizio
+            addresses = line[10:].strip()
+            # Divide tutti i frame (coppie di indirizzi separate da spazio)
+            frame_pairs = addresses.split()
+
+            for i, pair in enumerate(frame_pairs):
+                # Divide ogni coppia di indirizzi (PC:SP)
+                pc, sp = pair.split(':')
+                frames.append({
+                    'frame': str(i),
+                    'pc': pc,  # Program Counter
+                    'sp': sp,  # Stack Pointer
+                    'address': pc  # Manteniamo pc come address per compatibilità
+                })
+            return frames
+
+        # Pattern per il formato originale (una riga per frame)
+        pattern = r'(?:Backtrace:)?(?:\s*)?(\d+):(\s+)(0x[0-9a-fA-F]+)(?::0x[0-9a-fA-F]+)?'
+        match = re.match(pattern, line)
+
+        if match:
+            frames.append({
+                'frame': match.group(1),
+                'address': match.group(3)
+            })
+
+        return frames
+
     def read_line(self, input):
         lines = input.split('\n')
 
         for line in lines:
-            self.line_buffer.append(line)
+            if False:
+                self.line_buffer.append(line)
 
-            # Verifica se c'è un crash da analizzare
-            crash_info = self.analyze_buffer_for_crash()
-            if crash_info:
-                self.process_crash(crash_info)
+                # Verifica se c'è un crash da analizzare
+                crash_info = self.analyze_buffer_for_crash()
+                if crash_info:
+                    self.process_crash(crash_info)
 
-            continue
+            backtrace = self.parse_backtrace_line(line)
+            if backtrace is not None:
+                self.process_complete_backtrace(backtrace)
+                continue
+
             # Verifica se inizia un backtrace
             if "Backtrace:" in line:
                 self.backtrace_mode = True
