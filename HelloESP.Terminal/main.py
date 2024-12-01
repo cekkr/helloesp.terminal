@@ -6,6 +6,7 @@ import serial
 import serial.tools.list_ports
 
 from transfer_file import *
+from ESP32Tracing import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
@@ -364,6 +365,24 @@ class SerialInterface(Gtk.Window):
     def on_refresh_clicked(self, button):
         self.refresh_ports()
 
+    def init_tracing(self):
+        self.tracer = ESP32BacktraceParser(serial=self.serial_conn)
+
+        self.tracer.set_debug_files(
+            addr2line_path="/Users/riccardo/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line", # find $HOME/.espressif -name "xtensa-esp32-elf-addr2line"
+            elf_file="/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf/build/hello-idf.elf"
+        )
+
+        # Avvio del monitoraggio
+        # self.tracer.monitor_serial() # make it manual
+
+    def stop_tracing(self):
+        self.tracer = None
+
+    def update_tracing(self, line):
+        if self.tracer is not None:
+            self.tracer.read_line(line)
+
     def on_connect_clicked(self, button):
         if self.serial_conn is None:
             try:
@@ -375,6 +394,8 @@ class SerialInterface(Gtk.Window):
                     if self.files_toggle.get_active():
                         self.refresh_file_list()
                     GLib.timeout_add(100, self.read_serial)
+
+                    self.init_tracing()
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di connessione: {str(e)}\n")
                 self.serial_conn = None
@@ -384,6 +405,7 @@ class SerialInterface(Gtk.Window):
             self.connect_button.set_label("Connetti")
             self.append_terminal("Disconnesso\n")
             self.files_store.clear()
+            self.stop_tracing()
 
     def on_send_clicked(self, button):
         if self.serial_conn and self.serial_conn.is_open:
@@ -407,6 +429,7 @@ class SerialInterface(Gtk.Window):
                 if self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
                     rec = data.decode('ascii')
+                    self.update_tracing(rec)
                     self.append_terminal(f"Ricevuto: {rec}\n")
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
