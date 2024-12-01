@@ -1,27 +1,37 @@
-def safe_decode(buffer_data, encoding='ascii'):
+import re
+
+
+def safe_decode(buffer_data, encoding='ascii', strip_ansi=True):
     """
-    Decodifica in modo sicuro un buffer rimuovendo i caratteri non ASCII pericolosi.
+    Decodifica in modo sicuro un buffer rimuovendo caratteri problematici e codici ANSI.
 
     Args:
         buffer_data (bytes): Il buffer da decodificare
         encoding (str): L'encoding da utilizzare (default: 'ascii')
+        strip_ansi (bool): Se rimuovere i codici ANSI (default: True)
 
     Returns:
         str: La stringa decodificata e pulita
     """
     try:
-        # Prova prima la decodifica normale
-        return buffer_data.decode(encoding)
-    except UnicodeDecodeError:
-        # Se fallisce, converti in bytearray per manipolazione
-        byte_array = bytearray(buffer_data)
+        # Prima decodifica il buffer in stringa
+        text = buffer_data.decode(encoding, errors='ignore')
 
-        # Mantieni solo i caratteri ASCII stampabili (32-126) e alcuni caratteri comuni
+        if strip_ansi:
+            # Rimuove i codici ANSI escape
+            # Questo pattern cattura le sequenze che iniziano con ESC[ e finiscono con m
+            ansi_escape = re.compile(r'\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])')
+            text = ansi_escape.sub('', text)
+
+        # Opzionalmente, puoi anche ripulire altri caratteri di controllo mantenendo
+        # solo newline e tab
+        text = ''.join(char for char in text if char >= ' ' or char in '\n\t\r')
+
+        return text
+    except Exception as e:
+        # Fallback estremo: rimuovi tutti i bytes problematici
         safe_bytes = bytearray()
-        for byte in byte_array:
-            # Caratteri ASCII stampabili e newline/tab
-            if (32 <= byte <= 126) or byte in {9, 10, 13}:  # 9=tab, 10=newline, 13=carriage return
+        for byte in buffer_data:
+            if (32 <= byte <= 126) or byte in {9, 10, 13}:
                 safe_bytes.append(byte)
-
-        # Decodifica il buffer pulito
         return safe_bytes.decode(encoding, errors='ignore')
