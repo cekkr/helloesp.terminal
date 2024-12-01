@@ -146,7 +146,7 @@ class ESP32BacktraceParser:
                     self.backtrace_mode = False
 
                 if not line.strip():
-                    self.process_complete_backtrace()
+                    self.process_complete_backtrace(self.current_backtrace)
 
     def log(self, what):
         print(what)

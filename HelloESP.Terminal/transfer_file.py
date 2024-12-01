@@ -5,6 +5,7 @@ import serial
 import hashlib
 from main import *
 
+from generalFunctions import *
 
 class SerialCommandError(Exception):
     """Custom exception for serial command errors"""
@@ -62,7 +63,7 @@ def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : S
             try:
                 data = ser.readline()
                 #print("serial read data: ", data)
-                line = data.decode('ascii')
+                line = safe_decode(data)
 
                 if serInt is not None:
                     serInt.update_tracing(line)

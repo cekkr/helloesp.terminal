@@ -7,6 +7,7 @@ import serial.tools.list_ports
 
 from transfer_file import *
 from ESP32Tracing import *
+from generalFunctions import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
@@ -434,7 +435,7 @@ class SerialInterface(Gtk.Window):
             try:
                 if self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
-                    rec = data.decode('ascii')
+                    rec = safe_decode(data)
                     self.update_tracing(rec)
                     self.append_terminal(f"Ricevuto: {rec}\n")
             except serial.SerialException as e:
