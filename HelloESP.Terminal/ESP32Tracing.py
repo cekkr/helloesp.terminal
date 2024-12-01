@@ -238,10 +238,20 @@ class ESP32BacktraceParser:
                 if crash_info:
                     self.process_crash(crash_info)
 
-            backtrace = self.parse_backtrace_line(line)
-            if backtrace is not None:
-                self.process_complete_backtrace(backtrace)
-                continue
+            if "Backtrace:" in line:
+                spl = line.split('Backtrace:')
+
+                if len(spl) > 1:
+                    bline = 'Backtrace:' + spl[1]
+                    backtrace = self.parse_backtrace_line(bline)
+                    if backtrace is not None and len(backtrace) > 0:
+                        for frame_info in backtrace:
+                            source_info = self.get_source_location(frame_info['address'])
+                            if source_info:
+                                frame_info.update(source_info)
+
+                        self.process_complete_backtrace(backtrace)
+                        continue
 
             # Verifica se inizia un backtrace
             if "Backtrace:" in line:
