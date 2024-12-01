@@ -33,6 +33,8 @@ class ESP32BacktraceParser:
             "Fatal exception"
         ]
 
+        self.serialInterface = None
+
     def set_debug_files(self, addr2line_path: str, elf_file: str):
         """
         Imposta i file necessari per il debug simbolico.
@@ -282,6 +284,8 @@ class ESP32BacktraceParser:
 
     def log(self, what):
         print(what)
+        self.serialInterface.append_terminal("\x1b[31m"+what+"\x1b[0m\n")
+
         #logger.error(what)
 
     def process_crash(self, crash_info: Dict):

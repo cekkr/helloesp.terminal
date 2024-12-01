@@ -8,6 +8,7 @@ import serial.tools.list_ports
 from transfer_file import *
 from ESP32Tracing import *
 from generalFunctions import *
+from TerminalHandler import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
@@ -56,10 +57,13 @@ class SerialInterface(Gtk.Window):
         scrolled_window.set_vexpand(True)
         vbox.pack_start(scrolled_window, True, True, 0)
 
-        self.terminal = Gtk.TextView()
-        self.terminal.set_editable(False)
-        self.terminal.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        self.terminal_buffer = self.terminal.get_buffer()
+        self.terminal_handler = TerminalHandler()
+        self.terminal = self.terminal_handler.terminal
+
+        #self.terminal = Gtk.TextView()
+        #self.terminal.set_editable(False)
+        #self.terminal.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        #self.terminal_buffer = self.terminal.get_buffer()
 
         # Imposta font monospace per il terminale
         # Create a CSS provider
@@ -374,6 +378,7 @@ class SerialInterface(Gtk.Window):
     def init_tracing(self):
         self.tracer = ESP32BacktraceParser(serial=self.serial_conn)
 
+        self.tracer.serialInterface = self
         self.tracer.set_debug_files(
             addr2line_path="/Users/riccardo/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line", # find $HOME/.espressif -name "xtensa-esp32-elf-addr2line"
             elf_file="/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf/build/hello-idf.elf"
@@ -433,11 +438,12 @@ class SerialInterface(Gtk.Window):
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
             try:
-                if self.serial_conn.in_waiting:
+                while self.serial_conn.in_waiting:
                     data = self.serial_conn.read(self.serial_conn.in_waiting)
                     rec = safe_decode(data)
                     self.update_tracing(rec)
-                    self.append_terminal(f"Ricevuto: {rec}\n")
+
+                    self.append_terminal(data.decode('ascii', errors='replace'))
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
                 self.serial_conn.close()
@@ -452,6 +458,9 @@ class SerialInterface(Gtk.Window):
         return False
 
     def append_terminal(self, text):
+        self.terminal_handler.append_terminal(text)
+        return
+
         end_iter = self.terminal_buffer.get_end_iter()
         self.terminal_buffer.insert(end_iter, text)
         # Auto-scroll
