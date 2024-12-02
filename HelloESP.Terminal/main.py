@@ -54,7 +54,7 @@ class SerialInterface(Gtk.Window):
             controls_box.pack_start(self.files_toggle, False, False, 0)
 
         self.dev_restart_button = Gtk.Button(label="Restart dev")
-        self.dev_restart_button.connect("clicket", self.on_dev_reset_clicked)
+        self.dev_restart_button.connect("clicked", self.on_dev_reset_clicked)
         controls_box.pack_start(self.dev_restart_button, False, False, 0)
 
         # Area terminale
