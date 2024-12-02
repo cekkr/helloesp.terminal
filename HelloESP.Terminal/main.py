@@ -451,13 +451,16 @@ class SerialInterface(Gtk.Window):
                 self.connect_button.set_label("Connetti")
                 return False
             except Exception as e:
-                print("Data undecoded: ", data)
+                #print("Data undecoded: ", data)
+                self.append_terminal(rec)
                 return False
 
             return True
         return False
 
     def append_terminal(self, text):
+        if self.tracer is not None:
+            text = self.tracer.replace_memory_addresses(text)
         self.terminal_handler.append_terminal(text)
         return
 

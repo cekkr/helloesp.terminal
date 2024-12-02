@@ -282,6 +282,36 @@ class ESP32BacktraceParser:
                 if not line.strip():
                     self.process_complete_backtrace(self.current_backtrace)
 
+    def replace_memory_addresses(self, input_string):
+        """
+        Cerca gli indirizzi di memoria ESP32 nel formato 0x3ffxxxxx in una stringa
+        e li sostituisce con i loro nomi simbolici usando get_source_location().
+
+        Args:
+            input_string (str): La stringa da processare
+            get_source_location (callable): Funzione che converte l'indirizzo in nome simbolico
+
+        Returns:
+            str: La stringa con gli indirizzi sostituiti
+        """
+        # Pattern regex per trovare indirizzi ESP32 nel formato 0x3ffxxxxx
+        pattern = r'0x3ff[0-9a-fA-F]{5}'
+
+        def replace_match(match):
+            address = match.group(0)
+            try:
+                # Converte la stringa dell'indirizzo in intero
+                addr_int = int(address, 16)
+                # Ottiene il nome simbolico
+                location = self.get_source_location(addr_int)
+                return location if location else address
+            except ValueError:
+                return address
+
+        # Sostituisce tutti gli indirizzi trovati
+        result = re.sub(pattern, replace_match, input_string)
+        return result
+
     def log(self, what):
         print(what)
         self.serialInterface.append_terminal("\x1b[31m"+what+"\x1b[0m\n")
