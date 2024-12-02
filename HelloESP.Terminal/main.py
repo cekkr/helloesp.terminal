@@ -18,6 +18,7 @@ class SerialInterface(Gtk.Window):
 
         # Variabile per la connessione seriale
         self.serial_conn = None
+        self.tracer = None
 
         # Layout principale con pannello espandibile
         self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)

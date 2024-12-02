@@ -295,22 +295,32 @@ class ESP32BacktraceParser:
             str: La stringa con gli indirizzi sostituiti
         """
         # Pattern regex per trovare indirizzi ESP32 nel formato 0x3ffxxxxx
-        pattern = r'0x3ff[0-9a-fA-F]{5}'
+        pattern = r'0x[0-9a-f]{8}'
 
         def replace_match(match):
             address = match.group(0)
             try:
                 # Converte la stringa dell'indirizzo in intero
-                addr_int = int(address, 16)
+                #addr_int = int(address, 16)
                 # Ottiene il nome simbolico
-                location = self.get_source_location(addr_int)
-                return location if location else address
+                location = self.get_source_location(address)
+
+                if location is not None:
+                    res = ''
+                    for k,v in location:
+                        res += k+": "+v+"\n"
+                    return res
+
+                return address
             except ValueError:
                 return address
 
-        # Sostituisce tutti gli indirizzi trovati
-        result = re.sub(pattern, replace_match, input_string)
-        return result
+        try:
+            # Sostituisce tutti gli indirizzi trovati
+            result = re.sub(pattern, replace_match, input_string)
+            return result
+        except:
+            return input_string
 
     def log(self, what):
         print(what)

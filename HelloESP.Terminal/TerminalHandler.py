@@ -30,7 +30,7 @@ class TerminalHandler:
 
         # Debug: stampa tutti i tag disponibili
         print("Tags disponibili:")
-        self.tag_table.foreach(lambda tag, _: print(f"- {tag.get_property('name')}"))
+        self.tag_table.foreach(lambda tag: print(f"- {tag.get_property('name')}"))
 
     def _init_tags(self):
         # Color tags
