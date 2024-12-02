@@ -48,9 +48,14 @@ class SerialInterface(Gtk.Window):
         controls_box.pack_start(self.connect_button, False, False, 0)
 
         # Toggle per il pannello file
-        self.files_toggle = Gtk.ToggleButton(label="File Manager")
-        self.files_toggle.connect("toggled", self.on_files_toggle)
-        controls_box.pack_start(self.files_toggle, False, False, 0)
+        if False:
+            self.files_toggle = Gtk.ToggleButton(label="File Manager")
+            self.files_toggle.connect("toggled", self.on_files_toggle)
+            controls_box.pack_start(self.files_toggle, False, False, 0)
+
+        self.dev_restart_button = Gtk.Button(label="Restart dev")
+        self.dev_restart_button.connect("clicket", self.on_dev_reset_clicked)
+        controls_box.pack_start(self.dev_restart_button, False, False, 0)
 
         # Area terminale
         scrolled_window = Gtk.ScrolledWindow()
@@ -395,6 +400,10 @@ class SerialInterface(Gtk.Window):
         if self.tracer is not None:
             self.tracer.read_line(line)
             #print("tracer.read_line called")
+
+    def on_dev_reset_clicked(self, button):
+        if self.serial_conn is not None:
+            send_buffer(self.serial_conn, "$$$RESET$$$".encode("ascii"))
 
     def on_connect_clicked(self, button):
         if self.serial_conn is None:
