@@ -42,7 +42,7 @@ def validate_filename(filename: str) -> None:
         raise FileValidationError("Filename cannot start with dot or space")
 
 
-def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : SerialInterface = None) -> Tuple[bool, str]:
+def wait_for_response(ser: serial.Serial = None, timeout: float = 6, serInt : SerialInterface = None) -> Tuple[bool, str]:
     """
     Wait for and parse response from device, handling info/warning/error logs.
 
