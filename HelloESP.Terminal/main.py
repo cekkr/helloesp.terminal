@@ -48,10 +48,9 @@ class SerialInterface(Gtk.Window):
         controls_box.pack_start(self.connect_button, False, False, 0)
 
         # Toggle per il pannello file
-        if False:
-            self.files_toggle = Gtk.ToggleButton(label="File Manager")
-            self.files_toggle.connect("toggled", self.on_files_toggle)
-            controls_box.pack_start(self.files_toggle, False, False, 0)
+        self.files_toggle = Gtk.ToggleButton(label="File Manager")
+        self.files_toggle.connect("toggled", self.on_files_toggle)
+        controls_box.pack_start(self.files_toggle, False, False, 0)
 
         self.dev_restart_button = Gtk.Button(label="Restart dev")
         self.dev_restart_button.connect("clicked", self.on_dev_reset_clicked)
