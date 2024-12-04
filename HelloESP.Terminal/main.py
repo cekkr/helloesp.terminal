@@ -207,10 +207,12 @@ class SerialInterface(Gtk.Window):
             except SerialCommandError as e:
                 self.append_terminal(f"Errore seriale: {str(e)}\n")
                 if __debug__:
-                    raise e
+                    #raise e
+                    print(e)
             except Exception as e:
                 if __debug__:
-                    raise e
+                    #raise e
+                    print(e)
             finally:
                 self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
 

@@ -35,6 +35,8 @@ class ESP32BacktraceParser:
 
         self.serialInterface = None
 
+        self.backtrace = None
+
     def set_debug_files(self, addr2line_path: str, elf_file: str):
         """
         Imposta i file necessari per il debug simbolico.
@@ -228,6 +230,33 @@ class ESP32BacktraceParser:
 
         return frames
 
+    def extract_backtrace_addresses(self, line) -> list[str]:
+        """
+        Estrae gli indirizzi da una stringa di backtrace.
+        Se un indirizzo contiene ':', i due componenti vengono uniti come singolo elemento.
+
+        Args:
+            line: Stringa contenente il backtrace
+
+        Returns:
+            Lista di stringhe contenenti gli indirizzi trovati
+        """
+        # Rimuove "Backtrace:" se presente
+        if "Backtrace:" in line:
+            line = line.split("Backtrace:")[1].strip()
+
+        # Lista per memorizzare gli indirizzi trovati
+        addresses = []
+
+        # Divide la stringa in parti separate da spazi
+        parts = line.split()
+
+        for part in parts:
+            if "0x" in part:  # Verifica che sia un indirizzo esadecimale
+                addresses.append(part)
+
+        return addresses
+
     def read_line(self, input):
         lines = input.split('\n')
 
@@ -240,20 +269,50 @@ class ESP32BacktraceParser:
                 if crash_info:
                     self.process_crash(crash_info)
 
+            bline = line
             if "Backtrace:" in line:
                 spl = line.split('Backtrace:')
+                self.backtrace_mode = True
+                bline = 'Backtrace:' + spl[1]
+                self.current_backtrace = [bline]
+                continue
 
-                if len(spl) > 1:
-                    bline = 'Backtrace:' + spl[1]
-                    backtrace = self.parse_backtrace_line(bline)
-                    if backtrace is not None and len(backtrace) > 0:
-                        for frame_info in backtrace:
-                            source_info = self.get_source_location(frame_info['address'])
-                            if source_info:
-                                frame_info.update(source_info)
+            if self.backtrace_mode:
+                if '0x' in bline:
+                    self.current_backtrace.append(bline)
+                else:
+                    backtrace = ''.join(self.current_backtrace)
+                    backtrace = self.extract_backtrace_addresses(backtrace)
 
-                        self.process_complete_backtrace(backtrace)
-                        continue
+                    frames = []
+                    numFrame = 0
+                    for address in backtrace:
+                        frame_info = {
+                            'frame': numFrame,
+                            'address': address
+                        }
+
+                        numFrame += 1
+                        source_info = self.get_source_location(frame_info['address'])
+                        if source_info:
+                            frame_info.update(source_info)
+
+                        frames.append(frame_info)
+
+                    self.backtrace_mode = False
+                    self.process_complete_backtrace(frames)
+                    continue
+
+                '''
+                if self.backtrace is not None and len(backtrace) > 0:
+                    for frame_info in backtrace:
+                        source_info = self.get_source_location(frame_info['address'])
+                        if source_info:
+                            frame_info.update(source_info)
+
+                    self.process_complete_backtrace(backtrace)
+                    continue
+                '''
 
             # Verifica se inizia un backtrace
             if "Backtrace:" in line:
@@ -279,7 +338,7 @@ class ESP32BacktraceParser:
                         self.process_complete_backtrace(self.current_backtrace)
                     self.backtrace_mode = False
 
-                if not line.strip():
+                if frame_info is None or len(frame_info) == 0:
                     self.process_complete_backtrace(self.current_backtrace)
 
     def replace_memory_addresses(self, input_string):
