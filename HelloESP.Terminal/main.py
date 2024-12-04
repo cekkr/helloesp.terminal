@@ -1,3 +1,5 @@
+import threading
+
 import gi
 
 gi.require_version('Gtk', '3.0')
@@ -123,6 +125,60 @@ class SerialInterface(Gtk.Window):
 
         # Pannello File Manager
         self.setup_file_manager()
+        self.setup_backtrace_zone(vbox)
+
+    def setup_backtrace_zone(self, parent_box):
+        ###
+        ### Backtrace area
+        ###
+        self.backtrace_parent_box = parent_box
+
+        TRACEBACK_AREA_HEIGHT = 300
+
+        # Creo il pulsante toggle
+        self.backtrace_toggle_button = Gtk.ToggleButton(label="Mostra Traceback")
+        self.backtrace_toggle_button.connect("toggled", self.backtrace_on_toggle_button_clicked)
+        self.backtrace_parent_box.pack_start(self.backtrace_toggle_button, False, False, 0)
+
+        # Creo il contenitore per l'area traceback
+        self.traceback_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Box orizzontale per il textbox e il pulsante Check
+        self.backtrace_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        # Entry per inserire il traceback
+        self.backtrace_entry = Gtk.Entry()
+        self.backtrace_input_box.pack_start(self.backtrace_entry, True, True, 0)
+
+        # Pulsante Check
+        self.backtrace_check_button = Gtk.Button(label="Check traceback")
+        self.backtrace_check_button.connect("clicked", self.backtrace_on_check_clicked)
+        self.backtrace_input_box.pack_start(self.backtrace_check_button, False, False, 0)
+
+        self.traceback_box.pack_start(self.backtrace_input_box, False, False, 0)
+
+        # TextView per i risultati
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_size_request(-1, TRACEBACK_AREA_HEIGHT)
+
+        self.backtrace_textview = Gtk.TextView()
+        self.backtrace_textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.backtrace_textview.set_editable(False)
+        scrolled_window.add(self.backtrace_textview)
+
+        self.traceback_box.pack_start(scrolled_window, True, True, 0)
+
+        # Inizialmente nascondi l'area
+        self.backtrace_parent_box.pack_start(self.traceback_box, True, True, 0)
+
+        def hide_it():
+            time.sleep(2)
+            self.traceback_box.hide()
+            #self.backtrace_on_toggle_button_clicked(self.backtrace_toggle_button)
+
+        # Crea e avvia il thread per l'attesa di 2 secondi
+        thread_attesa = threading.Thread(target=hide_it)
+        thread_attesa.start()
 
     def setup_file_manager(self):
         """Setup del pannello di gestione file"""
@@ -185,6 +241,21 @@ class SerialInterface(Gtk.Window):
         # Area stato operazioni
         self.status_bar = Gtk.Statusbar()
         file_box.pack_start(self.status_bar, False, False, 0)
+
+    def backtrace_on_toggle_button_clicked(self, button):
+        if button.get_active():
+            self.traceback_box.show_all()
+            button.set_label("Nascondi Traceback")
+        else:
+            self.traceback_box.hide()
+            button.set_label("Mostra Traceback")
+
+    def backtrace_on_check_clicked(self, button):
+        # Qui puoi implementare la logica per processare il traceback
+        input_text = self.backtrace_entry.get_text()
+        buffer = self.backtrace_textview.get_buffer()
+        # Esempio: semplicemente mostra il testo inserito
+        buffer.set_text(f"Analisi del traceback:\n{input_text}")
 
     def on_files_toggle(self, button):
         """Gestisce il toggle del pannello file"""
