@@ -42,7 +42,35 @@ def validate_filename(filename: str) -> None:
         raise FileValidationError("Filename cannot start with dot or space")
 
 
-def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : SerialInterface = None) -> Tuple[bool, str]:
+def parse_esp32_log(line: str) -> dict:
+    """
+    Analizza una linea di log ESP32 e separa il timestamp, il tag e il messaggio.
+
+    Args:
+        line (str): La linea di log da analizzare, es. 'I (739418) HELLOESP: wait'
+
+    Returns:
+        dict: Dizionario contenente level, timestamp, tag e message.
+              Ritorna None se la linea non corrisponde al formato atteso.
+    """
+    import re
+
+    # Pattern per riconoscere il formato: Level (timestamp) TAG: message
+    pattern = r'^([A-Z])\s*\((\d+)\)\s*([^:]+):\s*(.*)$'
+
+    match = re.match(pattern, line)
+    if match:
+        level, timestamp, tag, message = match.groups()
+        return {
+            'level': level,
+            'timestamp': int(timestamp),
+            'tag': tag.strip(),
+            'message': message.strip()
+        }
+    return None
+
+
+def wait_for_response(ser: serial.Serial = None, timeout: float = 5, serInt : SerialInterface = None) -> Tuple[bool, str]:
     """
     Wait for and parse response from device, handling info/warning/error logs.
 
@@ -57,6 +85,7 @@ def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : S
     if serInt is not None:
         ser = serInt.serial_conn
 
+    thisLine = ""
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
         if ser.in_waiting:
@@ -71,16 +100,28 @@ def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : S
                 print("Debug read exception: ", data)
                 raise e
 
+            thisLine += line
+
+        if '\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.1):
+            line = thisLine
+
+            esp_tag = parse_esp32_log(line)
+
             # Handle different log levels while continuing to wait for actual response
-            if line.startswith('\x1b'):
+            if esp_tag is not None:
+                line = esp_tag['message']
+            elif line.startswith('\x1b'):
                 try:
                     log_level, message = line.split(":", 1)
                     print(f"[{log_level}] {message.strip()}")
+                    #line = message.strip()
                 except Exception as e:
                     print("Received void")
 
-                ser.flush()
-                continue
+            if esp_tag:
+                print(f"[{esp_tag['level']}] {esp_tag['message']}")
+            else:
+                print(line)
 
             # Process actual responses
             if line.startswith("OK:"):
@@ -89,8 +130,16 @@ def wait_for_response(ser: serial.Serial = None, timeout: float = -1, serInt : S
             elif line.startswith("ERROR:"):
                 ser.flush()
                 return False, line[6:].strip()
+            else:
+                spl = thisLine.split('\n')
+                if len(spl) > 1:
+                    thisLine = spl[1]
+                else:
+                    thisLine = ""
 
-        time.sleep(0.1)
+                ser.flush()
+
+        time.sleep(0.01)
 
     raise SerialCommandError("Timeout waiting for response")
 
@@ -172,7 +221,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
-        send_buffer(command.encode('ascii'))
+        send_buffer(ser, command.encode('ascii'))
         return wait_for_response(ser)
 
     except Exception as e:
