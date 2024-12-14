@@ -254,8 +254,11 @@ class SerialInterface(Gtk.Window):
         # Qui puoi implementare la logica per processare il traceback
         input_text = self.backtrace_entry.get_text()
         buffer = self.backtrace_textview.get_buffer()
-        # Esempio: semplicemente mostra il testo inserito
         buffer.set_text(f"Analisi del traceback:\n{input_text}")
+
+        res = self.tracer.read_line(input_text+"\n")
+        buffer.set_text(f"Analisi del traceback:\n{res}")
+
 
     def on_files_toggle(self, button):
         """Gestisce il toggle del pannello file"""

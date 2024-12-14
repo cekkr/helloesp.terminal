@@ -36,6 +36,7 @@ class ESP32BacktraceParser:
         self.serialInterface = None
 
         self.backtrace = None
+        self.results = ""
 
     def set_debug_files(self, addr2line_path: str, elf_file: str):
         """
@@ -260,6 +261,7 @@ class ESP32BacktraceParser:
     def read_line(self, input):
         lines = input.split('\n')
 
+        self.results = ""
         for line in lines:
             if False:
                 self.line_buffer.append(line)
@@ -341,6 +343,8 @@ class ESP32BacktraceParser:
                 if frame_info is None or len(frame_info) == 0:
                     self.process_complete_backtrace(self.current_backtrace)
 
+        return self.results
+
     def replace_memory_addresses(self, input_string):
         """
         Cerca gli indirizzi di memoria ESP32 nel formato 0x3ffxxxxx in una stringa
@@ -384,7 +388,7 @@ class ESP32BacktraceParser:
     def log(self, what):
         print(what)
         self.serialInterface.append_terminal("\x1b[31m"+what+"\x1b[0m\n")
-
+        self.results += what
         #logger.error(what)
 
     def process_crash(self, crash_info: Dict):
