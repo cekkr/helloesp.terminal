@@ -432,6 +432,10 @@ class ESP32BacktraceParser:
         """
         self.log("=== Backtrace Completo ===")
         for frame in backtrace:
+            if type(frame) is str:
+                self.log(frame+"\n")
+                continue
+            
             if 'function' in frame and 'file' in frame and 'line' in frame:
                 self.log(
                     f"Frame {frame['frame']}: {frame['function']} "
