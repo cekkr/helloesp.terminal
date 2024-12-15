@@ -1,13 +1,13 @@
 import re
 
 
-def safe_decode(buffer_data, encoding='ascii', strip_ansi=True):
+def safe_decode(buffer_data, encoding='utf8', strip_ansi=True):
     """
     Decodifica in modo sicuro un buffer rimuovendo caratteri problematici e codici ANSI.
 
     Args:
         buffer_data (bytes): Il buffer da decodificare
-        encoding (str): L'encoding da utilizzare (default: 'ascii')
+        encoding (str): L'encoding da utilizzare (default: 'utf8')
         strip_ansi (bool): Se rimuovere i codici ANSI (default: True)
 
     Returns:

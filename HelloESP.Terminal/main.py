@@ -97,6 +97,7 @@ class SerialInterface(Gtk.Window):
         vbox.pack_start(input_box, False, False, 0)
 
         self.input_entry = Gtk.Entry()
+        self.input_entry.connect("activate", self.on_send_clicked)
         input_box.pack_start(self.input_entry, True, True, 0)
 
         send_button = Gtk.Button(label="Invia")
@@ -116,6 +117,7 @@ class SerialInterface(Gtk.Window):
         cmd_box.pack_start(cmd_label, False, False, 5)
 
         self.cmd_entry = Gtk.Entry()
+        self.cmd_entry.connect("activate", self.on_execute_clicked)
         self.cmd_entry.set_placeholder_text("Inserisci comando...")  # Testo suggerimento
         cmd_box.pack_start(self.cmd_entry, True, True, 0)
 
@@ -478,7 +480,7 @@ class SerialInterface(Gtk.Window):
 
     def on_dev_reset_clicked(self, button):
         if self.serial_conn is not None:
-            send_buffer(self.serial_conn, "$$$RESET$$$".encode("ascii"))
+            send_buffer(self.serial_conn, "$$$RESET$$$".encode("utf8"))
 
     def on_connect_clicked(self, button):
         if self.serial_conn is None:
@@ -528,7 +530,7 @@ class SerialInterface(Gtk.Window):
                     rec = safe_decode(data)
                     self.update_tracing(rec)
 
-                    self.append_terminal(data.decode('ascii', errors='replace'))
+                    self.append_terminal(data.decode('utf8', errors='replace'))
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
                 self.serial_conn.close()

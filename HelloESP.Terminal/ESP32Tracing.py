@@ -259,7 +259,7 @@ class ESP32BacktraceParser:
         return addresses
 
     def read_line(self, input):
-        lines = input.split('\n')
+        lines = (input+"\n").split('\n')
 
         self.results = ""
         for line in lines:
@@ -435,7 +435,7 @@ class ESP32BacktraceParser:
             if type(frame) is str:
                 self.log(frame+"\n")
                 continue
-            
+
             if 'function' in frame and 'file' in frame and 'line' in frame:
                 self.log(
                     f"Frame {frame['frame']}: {frame['function']} "

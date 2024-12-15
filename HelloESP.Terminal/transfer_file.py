@@ -146,7 +146,7 @@ def wait_for_response(ser: serial.Serial = None, timeout: float = 5, serInt : Se
 
 def send_buffer(ser: serial.Serial, buffer, ping=True):
     if ping:
-        ser.write("$$$PING$$$\n".encode('ascii'))
+        ser.write("$$$PING$$$\n".encode('utf8'))
         ser.flush()
         success, msg = wait_for_response(ser)
 
@@ -155,7 +155,7 @@ def send_buffer(ser: serial.Serial, buffer, ping=True):
         else:
             print("PONG!")
 
-    ser.write(buffer.encode('ascii'))
+    ser.write(buffer.encode('utf8'))
     ser.flush()
 
 def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tuple[bool, str]:
@@ -221,7 +221,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
-        send_buffer(ser, command.encode('ascii'))
+        send_buffer(ser, command.encode('utf8'))
         return wait_for_response(ser)
 
     except Exception as e:
