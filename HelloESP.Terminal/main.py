@@ -10,6 +10,14 @@ from gi.repository import Gtk, GLib, Pango
 import serial
 import serial.tools.list_ports
 
+import subprocess
+import tempfile
+import os
+import stat
+from pathlib import Path
+from typing import Optional, Dict, Union, Callable
+from threading import Thread
+
 from transfer_file import *
 from ESP32Tracing import *
 from generalFunctions import *
@@ -643,6 +651,128 @@ class SerialInterface(Gtk.Window):
                 thread.start()
 
             return process
+
+        except Exception as e:
+            if output_callback:
+                output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
+            raise
+
+    def execute_script_ansi( # not working
+            self,
+            script_path: Union[str, Path],
+            output_callback: Optional[Callable[[str, str], None]] = None,
+            completion_callback: Optional[Callable[[int], None]] = None,
+            script_dir: Optional[Union[str, Path]] = None,
+            env: Optional[Dict[str, str]] = None,
+            shell: bool = False
+    ) -> subprocess.Popen:
+        """
+        Esegue uno script usando il comando 'script' di Unix per catturare
+        l'output con i codici ANSI, supportando callbacks per l'output in tempo reale.
+
+        Args:
+            script_path: Percorso allo script da eseguire
+            output_callback: Callback per l'output in tempo reale (line, output_type)
+            completion_callback: Callback chiamata al termine con exit code
+            script_dir: Directory di lavoro per l'esecuzione
+            env: Variabili d'ambiente da passare allo script
+            shell: Se True, esegue il comando attraverso la shell
+
+        Returns:
+            subprocess.Popen: L'oggetto processo in esecuzione
+        """
+        script_path = Path(script_path)
+        if script_dir is None:
+            script_dir = script_path.parent
+        else:
+            script_dir = Path(script_dir)
+
+        # Verifica esistenza script e imposta permessi
+        if not script_path.exists():
+            raise FileNotFoundError(f"Lo script {script_path} non esiste")
+
+        if os.name != 'nt':
+            current_mode = os.stat(script_path).st_mode
+            os.chmod(script_path, current_mode | stat.S_IXUSR)
+
+        # Prepara l'ambiente
+        full_env = os.environ.copy()
+        full_env.update({
+            'TERM': 'xterm-256color',
+            'FORCE_COLOR': '1',
+            'CLICOLOR': '1',
+            'CLICOLOR_FORCE': '1',
+            'COLORTERM': 'truecolor',
+            'LANG': 'en_US.UTF-8',
+            'LC_ALL': 'en_US.UTF-8'
+        })
+        if env:
+            full_env.update(env)
+
+        def handle_output(pipe, output_type: str):
+            """Gestisce l'output dal pipe specificato"""
+            try:
+                while True:
+                    raw_line = pipe.readline()
+                    if not raw_line:
+                        break
+                    if output_callback:
+                        line = raw_line.decode('utf-8', errors='replace')
+                        output_callback(line.rstrip('\n\r'), output_type)
+            except Exception as e:
+                if output_callback:
+                    output_callback(f"Errore I/O: {str(e)}", 'stderr')
+
+        def monitor_completion(process: subprocess.Popen):
+            """Monitora il completamento del processo"""
+            try:
+                exit_code = process.wait()
+                if completion_callback:
+                    completion_callback(exit_code)
+            except Exception as e:
+                if output_callback:
+                    output_callback(f"Errore nel monitoraggio: {str(e)}", 'stderr')
+
+        try:
+            # Crea file temporaneo per l'output di script
+            with tempfile.NamedTemporaryFile(mode='w+b') as temp_file:
+                # Preparazione comando script
+                script_process = subprocess.Popen(
+                    [
+                        'script',
+                        '-q',
+                        '-f',  # Flush dopo ogni write
+                        temp_file.name
+                    ],
+                    stdin=subprocess.PIPE,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    env=full_env,
+                    cwd=script_dir,
+                    shell=shell
+                )
+
+                # Avvia il processo dello script effettivo
+                real_process = subprocess.Popen(
+                    str(script_path),
+                    stdout=script_process.stdin,
+                    stderr=subprocess.PIPE,
+                    env=full_env,
+                    cwd=script_dir,
+                    shell=shell
+                )
+
+                # Avvia i thread per gestire output e completamento
+                threads = [
+                    Thread(target=handle_output, args=(temp_file, 'stdout'), daemon=True),
+                    Thread(target=handle_output, args=(real_process.stderr, 'stderr'), daemon=True),
+                    Thread(target=monitor_completion, args=(real_process,), daemon=True)
+                ]
+
+                for thread in threads:
+                    thread.start()
+
+                return real_process
 
         except Exception as e:
             if output_callback:
