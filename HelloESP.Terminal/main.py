@@ -1,4 +1,7 @@
+import stat
+import subprocess
 import threading
+from pathlib import Path
 
 import gi
 
@@ -11,10 +14,15 @@ from transfer_file import *
 from ESP32Tracing import *
 from generalFunctions import *
 from TerminalHandler import *
+#from envVar import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
-        super().__init__(title="Interfaccia Seriale")
+        self.esp_path = os.getenv('IDF_PATH')
+        self.project_path = "/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
+        self._espressif_path = None
+
+        super().__init__(title="HelloESP Monitor")
         self.set_border_width(10)
         self.set_default_size(800, 500)
 
@@ -59,13 +67,18 @@ class SerialInterface(Gtk.Window):
         controls_box.pack_start(self.dev_restart_button, False, False, 0)
 
         # Area terminale
+        self.terminal_handler = TerminalHandler()
+        self.add(self.terminal_handler.get_widget())
+        self.terminal = self.terminal_handler.terminal
+        scrolled_window = self.terminal_handler.scrolled_window
+
+        '''
         scrolled_window = Gtk.ScrolledWindow()
         scrolled_window.set_hexpand(True)
-        scrolled_window.set_vexpand(True)
-        vbox.pack_start(scrolled_window, True, True, 0)
+        scrolled_window.set_vexpand(True)        
+        '''
 
-        self.terminal_handler = TerminalHandler()
-        self.terminal = self.terminal_handler.terminal
+        vbox.pack_start(scrolled_window, True, True, 0)
 
         #self.terminal = Gtk.TextView()
         #self.terminal.set_editable(False)
@@ -90,7 +103,7 @@ class SerialInterface(Gtk.Window):
         style_context = self.terminal.get_style_context()
         style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        scrolled_window.add(self.terminal)
+        #scrolled_window.add(self.terminal)
 
         # Area input
         input_box = Gtk.Box(spacing=6)
@@ -187,6 +200,19 @@ class SerialInterface(Gtk.Window):
         file_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.main_paned.pack2(file_box, False, False)  # resize=False, shrink=False
 
+        ###
+        ### Compile zone
+        ###
+        compile_button_box = Gtk.Box(spacing=6)
+        file_box.pack_start(compile_button_box, False, False, 0)
+
+        btn_build = Gtk.Button(label="Build")
+        btn_build.connect("clicked", self.on_build)
+        compile_button_box.pack_start(btn_build, True, True, 0)
+
+        ###
+        ###
+        ###
         # Label intestazione
         header = Gtk.Label(label="File Manager")
         header.set_markup("<b>File Manager</b>")
@@ -260,6 +286,24 @@ class SerialInterface(Gtk.Window):
 
         res = self.tracer.read_line(input_text+"\n")
         buffer.set_text(f"Analisi del traceback:\n{res}")
+
+
+    def on_build(self, button):
+        if self.serial_conn is not None:
+            self.on_connect_clicked(button)
+        def output(text, type):
+            try:
+                #text = cont.decode()
+                self.append_terminal(text+"\n")
+            except:
+                print("undecoded process input")
+
+        def completion(res):
+            print("on_build completion: ", res)
+            if res == 0:
+                self.on_connect_clicked(button)
+
+        self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
 
 
     def on_files_toggle(self, button):
@@ -464,13 +508,158 @@ class SerialInterface(Gtk.Window):
     def on_refresh_clicked(self, button):
         self.refresh_ports()
 
+    ####
+    ####
+    ####
+
+    def espressif_path(self):
+        """
+        Ottiene il percorso della cartella .espressif.
+        Su sistemi Unix (Linux/macOS) sarà nella home directory dell'utente.
+        Su Windows sarà in %USERPROFILE%\.espressif
+
+        Returns:
+            Path: Il percorso completo alla cartella .espressif
+        """
+        if self._espressif_path is None:
+            if os.name == 'nt':  # Windows
+                base_path = os.getenv('USERPROFILE', '')
+            else:  # Unix-like (Linux, macOS)
+                base_path = os.path.expanduser('~')
+
+            self._espressif_path = Path(base_path) / '.espressif'
+
+            # Crea la directory se non esiste
+            if not self._espressif_path.exists():
+                return None;
+
+        return str(self._espressif_path)
+
+    #####
+    #####
+    #####
+
+    def execute_script(self, script_path: str, output_callback: callable = None,
+                       completion_callback: callable = None, shell: bool = True) -> subprocess.Popen:
+        """
+        Esegue uno script shell con supporto per output colorato e formattato in modo asincrono.
+
+        Args:
+            script_path (str): Il percorso dello script da eseguire
+            output_callback (callable): Callback per l'output in tempo reale
+            completion_callback (callable): Callback chiamata al termine
+            shell (bool): Se True, esegue il comando in una shell
+
+        Returns:
+            subprocess.Popen: L'oggetto processo in esecuzione
+        """
+        import signal
+        import os
+        import stat
+        import subprocess
+        from threading import Thread
+        import sys
+        import locale
+
+        script_path = os.path.abspath(script_path)
+        script_dir = os.path.dirname(script_path)
+
+        # Verifica esistenza script e imposta permessi
+        if not os.path.exists(script_path):
+            raise FileNotFoundError(f"Lo script {script_path} non esiste")
+
+        if os.name != 'nt':
+            current_mode = os.stat(script_path).st_mode
+            os.chmod(script_path, current_mode | stat.S_IXUSR)
+
+        # Configurazione ambiente per preservare i colori
+        env = os.environ.copy()
+        env.update({
+            'PYTHONUNBUFFERED': '1',  # Disabilita il buffering
+            'TERM': 'xterm-256color',  # Supporto 256 colori
+            'FORCE_COLOR': '1',  # Forza colori
+            'CLICOLOR': '1',  # Colori per comandi standard
+            'CLICOLOR_FORCE': '1',  # Forza colori su redirezione
+            'COLORTERM': 'truecolor',  # Abilita colori true-color
+            'LANG': 'en_US.UTF-8',  # Assicura il supporto UTF-8
+            'LC_ALL': 'en_US.UTF-8',  # Forza le impostazioni locali
+            'PYTHONIOENCODING': 'UTF-8'  # Forza encoding Python
+        })
+
+        # Supporto ANSI per Windows
+        if os.name == 'nt':
+            import ctypes
+            kernel32 = ctypes.windll.kernel32
+            kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
+
+        try:
+            process = subprocess.Popen(
+                script_path,
+                shell=shell,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                text=False,  # Modalità binaria per preservare ANSI
+                bufsize=128,  # Line buffering
+                env=env,
+                start_new_session=True,
+                cwd=script_dir
+            )
+
+            def handle_output(pipe, output_type):
+                try:
+                    while True:
+                        # Leggiamo in modalità binaria per preservare i codici ANSI
+                        raw_line = pipe.readline()
+                        print(f"Raw bytes: {raw_line!r}")  # Aggiungi questa riga per debug
+                        if not raw_line:
+                            break
+                        if output_callback:
+                            # Decodifica preservando i codici ANSI
+                            line = raw_line.decode('utf-8', errors='replace')
+                            # Non facciamo strip() dei caratteri speciali
+                            output_callback(line.rstrip('\n\r'), output_type)
+                except Exception as e:
+                    if output_callback and not process.poll():
+                        output_callback(f"Errore I/O: {str(e)}", 'stderr')
+
+            def monitor_completion():
+                """Monitora il completamento del processo"""
+                try:
+                    exit_code = process.wait()
+                    if completion_callback:
+                        completion_callback(exit_code)
+                except Exception as e:
+                    if output_callback:
+                        output_callback(f"Errore nel monitoraggio: {str(e)}", 'stderr')
+
+            # Avvia i thread per gestire output e completamento
+            threads = [
+                Thread(target=handle_output, args=(process.stdout, 'stdout'), daemon=True),
+                Thread(target=handle_output, args=(process.stderr, 'stderr'), daemon=True),
+                Thread(target=monitor_completion, daemon=True)
+            ]
+
+            for thread in threads:
+                thread.start()
+
+            return process
+
+        except Exception as e:
+            if output_callback:
+                output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
+            raise
+
+    ####
+    ####
+    ####
+
     def init_tracing(self):
         self.tracer = ESP32BacktraceParser(serial=self.serial_conn)
 
         self.tracer.serialInterface = self
         self.tracer.set_debug_files(
-            addr2line_path="/Users/riccardo/.espressif/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line", # find $HOME/.espressif -name "xtensa-esp32-elf-addr2line"
-            elf_file="/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf/build/hello-idf.elf"
+            addr2line_path= self.espressif_path() + "/tools/xtensa-esp-elf/esp-13.2.0_20240530/xtensa-esp-elf/bin/xtensa-esp32-elf-addr2line", # find $HOME/.espressif -name "xtensa-esp32-elf-addr2line"
+            elf_file= self.project_path + "/build/hello-idf.elf"
         )
 
         # Avvio del monitoraggio
@@ -487,7 +676,7 @@ class SerialInterface(Gtk.Window):
     def on_dev_reset_clicked(self, button):
         if self.serial_conn is not None:
             #send_buffer(self.serial_conn, "$$$RESET$$$".encode("utf8"))
-            
+
             # Toglie DTR
             self.serial_conn.setDTR(False)
             time.sleep(0.1)

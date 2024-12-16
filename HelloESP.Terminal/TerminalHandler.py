@@ -1,5 +1,7 @@
 import re
 from gi.repository import Gtk, Gdk, Pango
+from gi.repository import GObject
+
 
 class TerminalHandler:
     def __init__(self):
@@ -7,146 +9,327 @@ class TerminalHandler:
         self.terminal_buffer = Gtk.TextBuffer(tag_table=self.tag_table)
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
 
+        # Configure TextView
+        self.terminal.set_wrap_mode(Gtk.WrapMode.CHAR)
+        self.terminal.set_editable(False)
+
+        # Create scrolled window
+        self.scrolled_window = Gtk.ScrolledWindow()
+        self.scrolled_window.add(self.terminal)
+        self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+
+        # Keep reference to the adjustment
+        self.vadj = self.scrolled_window.get_vadjustment()
+
+        # Buffer update handling
+        self.pending_updates = []
+        self.update_pending = False
+
+        # ANSI color definitions (standard colors)
         self.colors = {
-            '30': 'black',
-            '31': 'red',
-            '32': 'green',
-            '33': 'yellow',
-            '34': 'blue',
-            '35': 'magenta',
-            '36': 'cyan',
-            '37': 'white',
-            '90': '#666666',
-            '91': '#ff0000',
-            '92': '#00ff00',
-            '93': '#ffff00',
-            '94': '#0000ff',
-            '95': '#ff00ff',
-            '96': '#00ffff',
-            '97': '#ffffff'
+            # Standard colors (30-37)
+            '0': '#000000',  # Black
+            '1': '#CD0000',  # Red
+            '2': '#00CD00',  # Green
+            '3': '#CDCD00',  # Yellow
+            '4': '#0000EE',  # Blue
+            '5': '#CD00CD',  # Magenta
+            '6': '#00CDCD',  # Cyan
+            '7': '#E5E5E5',  # White
+            # Bright colors (90-97)
+            '8': '#7F7F7F',  # Bright Black (Gray)
+            '9': '#FF0000',  # Bright Red
+            '10': '#00FF00',  # Bright Green
+            '11': '#FFFF00',  # Bright Yellow
+            '12': '#5C5CFF',  # Bright Blue
+            '13': '#FF00FF',  # Bright Magenta
+            '14': '#00FFFF',  # Bright Cyan
+            '15': '#FFFFFF'  # Bright White
         }
 
         self._init_tags()
 
-        # Debug: stampa tutti i tag disponibili
-        print("Tags disponibili:")
-        self.tag_table.foreach(lambda tag: print(f"- {tag.get_property('name')}"))
-
     def _init_tags(self):
-        # Color tags
-        for code, color in self.colors.items():
-            tag_name = f'fg_{code}'
-            tag = Gtk.TextTag.new(tag_name)
-            tag.set_property('foreground', color)
-            self.tag_table.add(tag)
-
-            bg_code = str(int(code) + 10)
-            tag_name = f'bg_{bg_code}'
-            tag = Gtk.TextTag.new(tag_name)
-            tag.set_property('background', color)
-            self.tag_table.add(tag)
-
-        # Style tags con debug
-        style_tags = {
-            '1': ('weight', Pango.Weight.BOLD),
-            '3': ('style', Pango.Style.ITALIC),
-            '4': ('underline', Pango.Underline.SINGLE),
-            '9': ('strikethrough', True),
+        # Initialize basic style tags
+        basic_styles = {
+            'bold': {'weight': Pango.Weight.BOLD},
+            'dim': {'weight': Pango.Weight.LIGHT},
+            'italic': {'style': Pango.Style.ITALIC},
+            'underline': {'underline': Pango.Underline.SINGLE},
+            'blink': {'background': '#FFFFFF'},  # Simulate blink with background
+            'reverse': {},  # Will be handled specially
+            'hidden': {'foreground': '#FFFFFF', 'background': '#FFFFFF'},
+            'strike': {'strikethrough': True}
         }
 
-        for code, (prop, value) in style_tags.items():
-            tag_name = f'style_{code}'
-            tag = Gtk.TextTag.new(tag_name)
-            tag.set_property(prop, value)
-            print(f"Creato tag {tag_name} con proprietà {prop}={value}")
+        for style_name, properties in basic_styles.items():
+            tag = Gtk.TextTag.new(style_name)
+            for prop, value in properties.items():
+                tag.set_property(prop, value)
             self.tag_table.add(tag)
 
-    def append_terminal(self, text):
-        print(f"\nProcessing text: {repr(text)}")  # Debug
-        ansi_escape = re.compile(r'\x1b\[((?:\d+;)*\d+)m')
+        # Initialize color tags
+        for code, color in self.colors.items():
+            # Foreground color tags (30-37, 90-97)
+            fg_tag = Gtk.TextTag.new(f'fg_{code}')
+            fg_tag.set_property('foreground', color)
+            self.tag_table.add(fg_tag)
 
-        match_positions = []
-        current_tags = set()
+            # Background color tags (40-47, 100-107)
+            bg_tag = Gtk.TextTag.new(f'bg_{code}')
+            bg_tag.set_property('background', color)
+            self.tag_table.add(bg_tag)
 
-        for match in ansi_escape.finditer(text):
-            start, end = match.span()
-            codes = match.group(1).split(';')
-            match_positions.append((start, end, codes))
-            print(f"Found ANSI codes: {codes} at position {start}:{end}")  # Debug
+    def _parse_ansi_code(self, code):
+        """Parse ANSI code and return corresponding tag names"""
+        tags = set()
 
-        last_end = 0
-        for start, end, codes in match_positions:
-            if start > last_end:
-                segment = text[last_end:start]
-                print(f"Inserting segment '{segment}' with tags: {current_tags}")  # Debug
-                self._insert_with_tags(segment, current_tags)
+        # Handle simple cases first
+        simple_mappings = {
+            '0': set(),  # Reset
+            '1': {'bold'},
+            '2': {'dim'},
+            '3': {'italic'},
+            '4': {'underline'},
+            '5': {'blink'},
+            '7': {'reverse'},
+            '8': {'hidden'},
+            '9': {'strike'}
+        }
 
-            self._update_tags(codes, current_tags)
-            last_end = end
+        if code in simple_mappings:
+            return simple_mappings[code]
 
-        if last_end < len(text):
-            segment = text[last_end:]
-            print(f"Inserting final segment '{segment}' with tags: {current_tags}")  # Debug
-            self._insert_with_tags(segment, current_tags)
+        # Handle colors
+        try:
+            code_num = int(code)
+            if 30 <= code_num <= 37:  # Standard foreground colors
+                tags.add(f'fg_{code_num - 30}')
+            elif 40 <= code_num <= 47:  # Standard background colors
+                tags.add(f'bg_{code_num - 40}')
+            elif 90 <= code_num <= 97:  # Bright foreground colors
+                tags.add(f'fg_{code_num - 82}')  # Maps 90-97 to 8-15
+            elif 100 <= code_num <= 107:  # Bright background colors
+                tags.add(f'bg_{code_num - 92}')  # Maps 100-107 to 8-15
+        except ValueError:
+            pass
 
-        self.terminal.scroll_to_iter(self.terminal_buffer.get_end_iter(), 0.0, False, 0.0, 0.0)
+        return tags
 
     def _update_tags(self, codes, current_tags):
-        print(f"Updating tags with codes: {codes}")  # Debug
         for code in codes:
             if code == '0':
                 current_tags.clear()
-                print("Reset tags")  # Debug
-            elif code in self.colors:
-                current_tags = {tag for tag in current_tags if not tag.startswith('fg_')}
-                current_tags.add(f'fg_{code}')
-            elif code.startswith('4') and code != '4':
-                current_tags = {tag for tag in current_tags if not tag.startswith('bg_')}
-                current_tags.add(f'bg_{code}')
-            elif code in ('1', '3', '4', '9'):
-                tag_name = f'style_{code}'
-                current_tags.add(tag_name)
-                print(f"Added style tag: {tag_name}")  # Debug
-        print(f"Current tags after update: {current_tags}")  # Debug
+            else:
+                new_tags = self._parse_ansi_code(code)
+                if new_tags:
+                    # Remove conflicting tags before adding new ones
+                    if any(tag.startswith('fg_') for tag in new_tags):
+                        current_tags = {tag for tag in current_tags if not tag.startswith('fg_')}
+                    if any(tag.startswith('bg_') for tag in new_tags):
+                        current_tags = {tag for tag in current_tags if not tag.startswith('bg_')}
+                    current_tags.update(new_tags)
 
-    def _insert_with_tags(self, text, tags):
+    def _schedule_update(self, text, tags):
+        """Schedule a text update to be processed in the main loop"""
+        self.pending_updates.append((text, tags))
+        if not self.update_pending:
+            self.update_pending = True
+            GObject.idle_add(self._process_updates, priority=GObject.PRIORITY_LOW)
+
+    def _process_updates(self):
+        """Process pending text updates in the main loop"""
+        if not self.pending_updates:
+            self.update_pending = False
+            return False
+
+        try:
+            while self.pending_updates:
+                text, tags = self.pending_updates.pop(0)
+
+                end_iter = self.terminal_buffer.get_end_iter()
+                mark = self.terminal_buffer.create_mark(None, end_iter, left_gravity=True)
+
+                self.terminal_buffer.insert(end_iter, text)
+
+                if tags:
+                    insert_iter = self.terminal_buffer.get_iter_at_mark(mark)
+                    end_iter = self.terminal_buffer.get_end_iter()
+                    for tag_name in tags:
+                        tag = self.tag_table.lookup(tag_name)
+                        if tag:
+                            self.terminal_buffer.apply_tag(tag, insert_iter, end_iter)
+
+                self.terminal_buffer.delete_mark(mark)
+
+            adj = self.vadj
+            if adj:
+                GObject.idle_add(
+                    lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
+                    priority=GObject.PRIORITY_LOW
+                )
+
+        except Exception as e:
+            print(f"Error processing updates: {e}")
+
+        self.update_pending = False
+        return False
+
+    def append_terminal(self, text):
         if not text:
             return
 
-        end_iter = self.terminal_buffer.get_end_iter()
-        start_mark = self.terminal_buffer.create_mark(None, end_iter, True)
+        try:
+            text = self._sanitize_text(text)
+            ansi_pattern = re.compile(r'\x1b\[([0-9;]*)m')
 
-        self.terminal_buffer.insert(end_iter, text)
+            segments = []
+            current_position = 0
+            current_tags = set()
 
-        start_iter = self.terminal_buffer.get_iter_at_mark(start_mark)
-        end_iter = self.terminal_buffer.get_end_iter()
+            for match in ansi_pattern.finditer(text):
+                print("Found ANSI pattern")
 
-        for tag_name in tags:
-            tag = self.tag_table.lookup(tag_name)
-            if tag:
-                self.terminal_buffer.apply_tag(tag, start_iter, end_iter)
-                print(f"Applied tag {tag_name} to text '{text}'")  # Debug
-            else:
-                print(f"Warning: Tag {tag_name} not found!")  # Debug
+                start, end = match.span()
+                if start > current_position:
+                    segments.append((text[current_position:start], current_tags.copy()))
 
-        self.terminal_buffer.delete_mark(start_mark)
+                codes = match.group(1).split(';') if match.group(1) else ['0']
+                self._update_tags(codes, current_tags)
+                current_position = end
 
+            if current_position < len(text):
+                segments.append((text[current_position:], current_tags.copy()))
 
-# Test function
-def test_terminal():
-    handler = TerminalHandler()
-    window = Gtk.Window()
-    window.set_default_size(400, 300)
-    window.add(handler.terminal)
+            for content, tags in segments:
+                self._schedule_update(content, tags)
 
-    # Test various text attributes
-    test_text = "Normal \x1b[1mBold\x1b[0m \x1b[3mItalic\x1b[0m \x1b[4mUnderline\x1b[0m \x1b[31mRed\x1b[0m\n"
-    handler.append_terminal(test_text)
+        except Exception as e:
+            print(f"Error in append_terminal: {e}")
 
-    window.connect("destroy", Gtk.main_quit)
-    window.show_all()
-    Gtk.main()
+    def _sanitize_text(self, text):
+        """Sanitize text while preserving ANSI escape sequences"""
+        if not isinstance(text, str):
+            try:
+                text = str(text)
+            except:
+                return ""
 
+        text = self._handle_control_sequences(text)
 
-if __name__ == "__main__":
-    test_terminal()
+        # Preserve ANSI escape sequences while cleaning other characters
+        parts = []
+        current_pos = 0
+        for match in re.finditer(r'\x1b\[[0-9;]*m', text):
+            start, end = match.span()
+            # Clean the text between ANSI sequences
+            clean_text = ''.join(
+                char for char in text[current_pos:start]
+                if char in '\n\t' or (ord(char) >= 32 and ord(char) <= 126) or ord(char) > 159
+            )
+            parts.append(clean_text)
+            parts.append(text[start:end])  # Keep the ANSI sequence as-is
+            current_pos = end
+
+        # Clean the remaining text after the last ANSI sequence
+        clean_text = ''.join(
+            char for char in text[current_pos:]
+            if char in '\n\t' or (ord(char) >= 32 and ord(char) <= 126) or ord(char) > 159
+        )
+        parts.append(clean_text)
+
+        return ''.join(parts)
+
+    def _handle_control_sequences(self, text):
+        # Keep ANSI color/style sequences while handling other control chars
+        control_chars = {
+            '\x08': self._handle_backspace,
+            '\r': self._handle_carriage_return,
+            '\x1b[K': self._handle_clear_line,
+            '\x1b[2K': self._handle_clear_entire_line,
+            '\x1b[1K': self._handle_clear_to_start
+        }
+
+        result = []
+        i = 0
+        while i < len(text):
+            handled = False
+            for seq, handler in control_chars.items():
+                if text[i:].startswith(seq):
+                    handler(text, i)
+                    i += len(seq)
+                    handled = True
+                    break
+
+            if not handled:
+                result.append(text[i])
+                i += 1
+
+        return ''.join(result)
+
+    def _handle_backspace(self, text, pos):
+        """Handle backspace character by removing previous character if it exists"""
+        try:
+            end_iter = self.terminal_buffer.get_end_iter()
+            start_iter = end_iter.copy()
+            if start_iter.backward_char():  # If there's a character to delete
+                self.terminal_buffer.delete(start_iter, end_iter)
+        except Exception as e:
+            print(f"Error handling backspace: {e}")
+
+    def _handle_carriage_return(self, text, pos):
+        """Handle carriage return by moving to start of the current line"""
+        try:
+            end_iter = self.terminal_buffer.get_end_iter()
+            line_start = end_iter.copy()
+            line_start.backward_chars(end_iter.get_line_offset())
+            # Delete from line start to current position
+            self.terminal_buffer.delete(line_start, end_iter)
+        except Exception as e:
+            print(f"Error handling carriage return: {e}")
+
+    def _handle_clear_line(self, text, pos):
+        """Clear from cursor to the end of line"""
+        try:
+            end_iter = self.terminal_buffer.get_end_iter()
+            line_end = end_iter.copy()
+            line_end.forward_to_line_end()
+            # Delete from current position to end of line
+            self.terminal_buffer.delete(end_iter, line_end)
+        except Exception as e:
+            print(f"Error handling clear line: {e}")
+
+    def _handle_clear_entire_line(self, text, pos):
+        """Clear the entire current line"""
+        try:
+            end_iter = self.terminal_buffer.get_end_iter()
+            line_start = end_iter.copy()
+            line_end = end_iter.copy()
+
+            # Move to start of line
+            line_start.backward_chars(end_iter.get_line_offset())
+            # Move to end of line
+            line_end.forward_to_line_end()
+
+            # Delete the entire line
+            self.terminal_buffer.delete(line_start, line_end)
+        except Exception as e:
+            print(f"Error handling clear entire line: {e}")
+
+    def _handle_clear_to_start(self, text, pos):
+        """Clear from cursor to the start of line"""
+        try:
+            end_iter = self.terminal_buffer.get_end_iter()
+            line_start = end_iter.copy()
+
+            # Move to start of line
+            line_start.backward_chars(end_iter.get_line_offset())
+
+            # Delete from start of line to current position
+            self.terminal_buffer.delete(line_start, end_iter)
+        except Exception as e:
+            print(f"Error handling clear to start: {e}")
+
+    def get_widget(self):
+        """Return the scrolled window containing the terminal"""
+        return self.scrolled_window
