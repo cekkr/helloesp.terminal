@@ -1,4 +1,6 @@
 import re
+from array import array
+
 from gi.repository import Gtk, Gdk, Pango
 from gi.repository import GObject
 
@@ -8,6 +10,24 @@ class TerminalHandler:
         self.tag_table = Gtk.TextTagTable()
         self.terminal_buffer = Gtk.TextBuffer(tag_table=self.tag_table)
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
+
+        ### Relaxing background
+        # Imposta il colore di sfondo
+        rgba = Gdk.RGBA()
+        rgba.parse("#2E3436")
+        self.terminal.override_background_color(Gtk.StateFlags.NORMAL, rgba)
+
+        # Imposta il colore del testo
+        rgba_text = Gdk.RGBA()
+        rgba_text.parse("#FFFFFF")
+        self.terminal.override_color(Gtk.StateFlags.NORMAL, rgba_text)
+
+        # Imposta il font
+        font = Pango.FontDescription()
+        font.set_family("Monospace")
+        font.set_weight(Pango.Weight.BOLD)
+        font.set_size(12 * Pango.SCALE)
+        self.terminal.override_font(font)
 
         # Configure TextView
         self.terminal.set_wrap_mode(Gtk.WrapMode.CHAR)
@@ -24,6 +44,8 @@ class TerminalHandler:
         # Buffer update handling
         self.pending_updates = []
         self.update_pending = False
+
+        self.ansi_pattern = re.compile(r'(?:\\x1b|\x1b)\[([0-9;]*)m')
 
         # ANSI color definitions (standard colors)
         self.colors = {
@@ -117,6 +139,9 @@ class TerminalHandler:
         return tags
 
     def _update_tags(self, codes, current_tags):
+        if type(codes) is not list:
+            codes = [codes]
+
         for code in codes:
             if code == '0':
                 current_tags.clear()
@@ -125,10 +150,14 @@ class TerminalHandler:
                 if new_tags:
                     # Remove conflicting tags before adding new ones
                     if any(tag.startswith('fg_') for tag in new_tags):
+                        # Rimuove solo i tag fg_ esistenti
                         current_tags = {tag for tag in current_tags if not tag.startswith('fg_')}
                     if any(tag.startswith('bg_') for tag in new_tags):
+                        # Rimuove solo i tag bg_ esistenti
                         current_tags = {tag for tag in current_tags if not tag.startswith('bg_')}
                     current_tags.update(new_tags)
+
+        return current_tags
 
     def _schedule_update(self, text, tags):
         """Schedule a text update to be processed in the main loop"""
@@ -175,31 +204,57 @@ class TerminalHandler:
         self.update_pending = False
         return False
 
+    def normalize_ansi(self, text):
+        """
+        Normalizza le sequenze ANSI nel testo, convertendo le versioni escaped
+        nella forma corretta con \x1b.
+
+        Args:
+            text (str): Il testo contenente sequenze ANSI (escaped o non)
+
+        Returns:
+            str: Il testo con tutte le sequenze ANSI normalizzate
+        """
+
+        def replacer(match):
+            # Estrae i codici numerici dal gruppo catturato
+            codes = match.group(1)
+            # Ricostruisce la sequenza ANSI nella forma corretta
+            return f"\x1b[{codes}m"
+
+        # Applica la sostituzione su tutto il testo
+        return self.ansi_pattern.sub(replacer, text)
+
     def append_terminal(self, text):
         if not text:
             return
 
         try:
+            text = self.normalize_ansi(text)
             text = self._sanitize_text(text)
-            ansi_pattern = re.compile(r'\x1b\[([0-9;]*)m')
+            ansi_pattern = self.ansi_pattern  # re.compile(r'(?:\\x1b|\x1b)\[([0-9;]*)m')
 
             segments = []
-            current_position = 0
+            last_position = 0
             current_tags = set()
 
-            for match in ansi_pattern.finditer(text):
-                print("Found ANSI pattern")
+            def add_piece(up_to):
+                segments.append((text[last_position:up_to], current_tags.copy()))
 
+            for match in ansi_pattern.finditer(text):
                 start, end = match.span()
-                if start > current_position:
-                    segments.append((text[current_position:start], current_tags.copy()))
+
+                if last_position == 0 and start > 0:
+                    add_piece(start)
+                elif last_position > 0 and last_position != start:
+                    add_piece(start)
 
                 codes = match.group(1).split(';') if match.group(1) else ['0']
-                self._update_tags(codes, current_tags)
-                current_position = end
+                current_tags = self._update_tags(codes, current_tags)
+                last_position = end
 
-            if current_position < len(text):
-                segments.append((text[current_position:], current_tags.copy()))
+            if last_position < len(text):
+                add_piece(len(text))
 
             for content, tags in segments:
                 self._schedule_update(content, tags)

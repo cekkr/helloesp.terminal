@@ -30,9 +30,11 @@ class SerialInterface(Gtk.Window):
         self.project_path = "/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
         self._espressif_path = None
 
+        self.is_building = False
+
         super().__init__(title="HelloESP Monitor")
         self.set_border_width(10)
-        self.set_default_size(800, 500)
+        self.set_default_size(1400, 1000)
 
         # Variabile per la connessione seriale
         self.serial_conn = None
@@ -297,6 +299,11 @@ class SerialInterface(Gtk.Window):
 
 
     def on_build(self, button):
+        if self.is_building:
+            return
+
+        self.is_building = True
+
         if self.serial_conn is not None:
             self.on_connect_clicked(button)
         def output(text, type):
@@ -310,6 +317,7 @@ class SerialInterface(Gtk.Window):
             print("on_build completion: ", res)
             if res == 0:
                 self.on_connect_clicked(button)
+            self.is_building = False
 
         self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
 
@@ -323,6 +331,25 @@ class SerialInterface(Gtk.Window):
         else:
             self.main_paned.get_child2().hide()
 
+    def thread_execute_command(self, command):
+        try:
+            success, response = execute_command(self, command)
+            if success:
+                self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
+            else:
+                self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
+        except SerialCommandError as e:
+            self.append_terminal(f"Errore seriale: {str(e)}\n")
+            if __debug__:
+                # raise e
+                print(e)
+        except Exception as e:
+            if __debug__:
+                # raise e
+                print(e)
+        finally:
+            self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
+
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
 
@@ -332,23 +359,7 @@ class SerialInterface(Gtk.Window):
             return
 
         if command:
-            try:
-                success, response = execute_command(self, command)
-                if success:
-                    self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
-                else:
-                    self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
-            except SerialCommandError as e:
-                self.append_terminal(f"Errore seriale: {str(e)}\n")
-                if __debug__:
-                    #raise e
-                    print(e)
-            except Exception as e:
-                if __debug__:
-                    #raise e
-                    print(e)
-            finally:
-                self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
+            threading.Thread(target=self.thread_execute_command, args=(command,)).start()
 
     def refresh_file_list(self):
         """Aggiorna la lista dei file sul device"""
@@ -378,6 +389,17 @@ class SerialInterface(Gtk.Window):
         """Handler refresh lista file"""
         self.refresh_file_list()
 
+
+    def upload_file(self, base_name, data):
+        success, msg = write_file(self, base_name, data)
+        if success:
+            self.show_status(f"File {base_name} caricato con successo")
+            self.append_terminal(f"File caricato: {base_name}\n")
+            self.refresh_file_list()
+        else:
+            self.show_status(f"Errore upload: {msg}")
+            self.append_terminal(f"Errore upload: {msg}\n")
+
     def on_upload_file(self, button):
         """Handler upload file"""
         if not self.serial_conn:
@@ -401,14 +423,8 @@ class SerialInterface(Gtk.Window):
                 with open(filename, 'rb') as f:
                     data = f.read()
                     base_name = os.path.basename(filename)
-                    success, msg = write_file(self, base_name, data)
-                    if success:
-                        self.show_status(f"File {base_name} caricato con successo")
-                        self.append_terminal(f"File caricato: {base_name}\n")
-                        self.refresh_file_list()
-                    else:
-                        self.show_status(f"Errore upload: {msg}")
-                        self.append_terminal(f"Errore upload: {msg}\n")
+                    threading.Thread(target=self.upload_file, args=(base_name, data,)).start()
+
             except Exception as e:
                 self.show_status(f"Errore: {str(e)}")
                 self.append_terminal(f"Errore upload: {str(e)}\n")
@@ -417,6 +433,10 @@ class SerialInterface(Gtk.Window):
 
     def on_download_file(self, button):
         """Handler download file"""
+
+        self.append_terminal("\033[93mDownload file not implemented\033[0m")
+        return
+
         selection = self.files_view.get_selection()
         model, treeiter = selection.get_selected()
         if not treeiter:
@@ -600,9 +620,12 @@ class SerialInterface(Gtk.Window):
             kernel32 = ctypes.windll.kernel32
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
+        cmd = script_path
+        cmd = script_path + " | perl -pe 's/\\e\\[?.*?[\\@-~]//g'"
+
         try:
             process = subprocess.Popen(
-                script_path,
+                cmd,
                 shell=shell,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -879,7 +902,7 @@ class SerialInterface(Gtk.Window):
     def append_terminal(self, text):
         if self.tracer is not None:
             text = self.tracer.replace_memory_addresses(text)
-        self.terminal_handler.append_terminal(text)
+        self.terminal_handler.append_terminal(text + '\n')
         return
 
         end_iter = self.terminal_buffer.get_end_iter()
