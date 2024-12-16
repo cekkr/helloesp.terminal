@@ -486,7 +486,13 @@ class SerialInterface(Gtk.Window):
 
     def on_dev_reset_clicked(self, button):
         if self.serial_conn is not None:
-            send_buffer(self.serial_conn, "$$$RESET$$$".encode("utf8"))
+            #send_buffer(self.serial_conn, "$$$RESET$$$".encode("utf8"))
+            
+            # Toglie DTR
+            self.serial_conn.setDTR(False)
+            time.sleep(0.1)
+            # Imposta DTR
+            self.serial_conn.setDTR(True)
 
     def on_connect_clicked(self, button):
         if self.serial_conn is None:
