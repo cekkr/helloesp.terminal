@@ -104,7 +104,7 @@ class SerialInterface(Gtk.Window):
         send_button.connect("clicked", self.on_send_clicked)
         input_box.pack_start(send_button, False, False, 0)
 
-        reset_button = Gtk.Button(label="Reset")
+        reset_button = Gtk.Button(label="Clear")
         reset_button.connect("clicked", self.on_reset_clicked)
         input_box.pack_start(reset_button, False, False, 0)
 
@@ -273,6 +273,12 @@ class SerialInterface(Gtk.Window):
 
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
+
+        if(command == "clear"):
+            self.on_reset_clicked()
+            self.cmd_entry.set_text("")
+            return
+
         if command:
             try:
                 success, response = execute_command(self, command)
