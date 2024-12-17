@@ -4,9 +4,11 @@ from array import array
 from gi.repository import Gtk, Gdk, Pango
 from gi.repository import GObject
 
+
 class TerminalHandler:
-    def __init__(self):
+    def __init__(self, max_lines=1000):
         # Terminal setup
+        self.max_lines = max_lines  # Maximum number of lines to keep
         self.tag_table = Gtk.TextTagTable()
         self.terminal_buffer = Gtk.TextBuffer(tag_table=self.tag_table)
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
@@ -27,6 +29,26 @@ class TerminalHandler:
         font.set_size(12 * Pango.SCALE)
         self.terminal.override_font(font)
 
+        ###
+        ### Selection color
+        ###
+        # Creare un provider CSS
+        css_provider = Gtk.CssProvider()
+        css = """
+                textview text selection {
+                    background-color: #3584e4;
+                    color: #ffffff;
+                }
+                """
+        css_provider.load_from_data(css.encode())
+
+        # Applicare lo stile
+        context = self.terminal.get_style_context()
+        context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
+
+        ####
+        ####
+
         # Terminal configuration
         self.terminal.set_wrap_mode(Gtk.WrapMode.CHAR)
         self.terminal.set_editable(False)
@@ -46,12 +68,6 @@ class TerminalHandler:
         self.terminal_box.pack_start(self.terminal, True, True, 0)
 
         self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
-
-        # Keep reference to the adjustment
-        self.vadj = self.scrolled_window.get_vadjustment()
-
-        # Initialize search functionality
-        self.setup_search()
 
         # Keep reference to the adjustment
         self.vadj = self.scrolled_window.get_vadjustment()
@@ -84,6 +100,69 @@ class TerminalHandler:
         }
 
         self._init_tags()
+
+    def check_line_limit(self):
+        """Check if the buffer exceeds the maximum line limit and remove oldest lines if necessary"""
+        buffer = self.terminal_buffer
+        line_count = buffer.get_line_count()
+
+        if line_count > self.max_lines:
+            # Calculate how many lines to remove
+            lines_to_remove = line_count - self.max_lines
+
+            # Get iterator for the start of the buffer
+            start_iter = buffer.get_start_iter()
+
+            # Get iterator for the end of the lines to remove
+            end_iter = buffer.get_iter_at_line(lines_to_remove)
+
+            # Delete the excess lines
+            buffer.delete(start_iter, end_iter)
+
+            # Return True if lines were removed
+            return True
+        return False
+
+    def _process_updates(self):
+        """Process pending text updates in the main loop"""
+        if not self.pending_updates:
+            self.update_pending = False
+            return False
+
+        try:
+            while self.pending_updates:
+                text, tags = self.pending_updates.pop(0)
+
+                end_iter = self.terminal_buffer.get_end_iter()
+                mark = self.terminal_buffer.create_mark(None, end_iter, left_gravity=True)
+
+                self.terminal_buffer.insert(end_iter, text)
+
+                if tags:
+                    insert_iter = self.terminal_buffer.get_iter_at_mark(mark)
+                    end_iter = self.terminal_buffer.get_end_iter()
+                    for tag_name in tags:
+                        tag = self.tag_table.lookup(tag_name)
+                        if tag:
+                            self.terminal_buffer.apply_tag(tag, insert_iter, end_iter)
+
+                self.terminal_buffer.delete_mark(mark)
+
+                # Check line limit after each update
+                self.check_line_limit()
+
+            adj = self.vadj
+            if adj and self.scrollDown:
+                GObject.idle_add(
+                    lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
+                    priority=GObject.PRIORITY_LOW
+                )
+
+        except Exception as e:
+            print(f"Error processing updates: {e}")
+
+        self.update_pending = False
+        return False
 
     def setup_search(self):
         # Search state
@@ -295,44 +374,6 @@ class TerminalHandler:
         if not self.update_pending:
             self.update_pending = True
             GObject.idle_add(self._process_updates, priority=GObject.PRIORITY_LOW)
-
-    def _process_updates(self):
-        """Process pending text updates in the main loop"""
-        if not self.pending_updates:
-            self.update_pending = False
-            return False
-
-        try:
-            while self.pending_updates:
-                text, tags = self.pending_updates.pop(0)
-
-                end_iter = self.terminal_buffer.get_end_iter()
-                mark = self.terminal_buffer.create_mark(None, end_iter, left_gravity=True)
-
-                self.terminal_buffer.insert(end_iter, text)
-
-                if tags:
-                    insert_iter = self.terminal_buffer.get_iter_at_mark(mark)
-                    end_iter = self.terminal_buffer.get_end_iter()
-                    for tag_name in tags:
-                        tag = self.tag_table.lookup(tag_name)
-                        if tag:
-                            self.terminal_buffer.apply_tag(tag, insert_iter, end_iter)
-
-                self.terminal_buffer.delete_mark(mark)
-
-            adj = self.vadj
-            if adj and self.scrollDown:
-                GObject.idle_add(
-                    lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
-                    priority=GObject.PRIORITY_LOW
-                )
-
-        except Exception as e:
-            print(f"Error processing updates: {e}")
-
-        self.update_pending = False
-        return False
 
     def normalize_ansi(self, text):
         """

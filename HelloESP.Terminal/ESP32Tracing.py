@@ -273,7 +273,8 @@ class ESP32BacktraceParser:
                 # Verifica se c'è un crash da analizzare
                 crash_info = self.analyze_buffer_for_crash()
                 if crash_info:
-                    self.process_crash(crash_info)
+                    #self.process_crash(crash_info)
+                    pass
 
             bline = line
             if "Backtrace:" in line:
@@ -395,6 +396,7 @@ class ESP32BacktraceParser:
         self.results += what
         #logger.error(what)
 
+    '''
     def process_crash(self, crash_info: Dict): # deprecated
         """
         Processa e logga le informazioni complete sul crash.
@@ -426,6 +428,7 @@ class ESP32BacktraceParser:
             self.log(f"Context: {line}")
 
         self.log("=========================\n")
+    '''
 
     def process_complete_backtrace(self, backtrace: List[Dict]):
         """
