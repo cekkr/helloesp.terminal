@@ -607,7 +607,7 @@ class SerialInterface(Gtk.Window):
 
         env = os.environ.copy()
         env.update({
-            'PYTHONUNBUFFERED': '1',
+            #'PYTHONUNBUFFERED': '1',
             'TERM': 'xterm-256color',
             'FORCE_COLOR': '1',
             'CLICOLOR': '1',
@@ -615,7 +615,7 @@ class SerialInterface(Gtk.Window):
             'COLORTERM': 'truecolor',
             'LANG': 'en_US.UTF-8',
             'LC_ALL': 'en_US.UTF-8',
-            'PYTHONIOENCODING': 'UTF-8'
+            #'PYTHONIOENCODING': 'UTF-8'
         })
 
         if os.name == 'nt':
