@@ -300,6 +300,8 @@ class SerialInterface(Gtk.Window):
 
 
     def on_build(self, button):
+        self.on_reset_clicked(button)
+
         if self.is_building:
             return
 
@@ -581,21 +583,14 @@ class SerialInterface(Gtk.Window):
                        completion_callback: callable = None, shell: bool = True) -> subprocess.Popen:
         """
         Esegue uno script shell con supporto per output colorato e formattato in modo asincrono.
-
-        Args:
-            script_path (str): Il percorso dello script da eseguire
-            output_callback (callable): Callback per l'output in tempo reale
-            completion_callback (callable): Callback chiamata al termine
-            shell (bool): Se True, esegue il comando in una shell
-
-        Returns:
-            subprocess.Popen: L'oggetto processo in esecuzione
+        Include flush periodico degli stream.
         """
         import signal
         import os
         import stat
         import subprocess
-        from threading import Thread
+        from threading import Thread, Event
+        import time
         import sys
         import locale
 
@@ -610,28 +605,26 @@ class SerialInterface(Gtk.Window):
             current_mode = os.stat(script_path).st_mode
             os.chmod(script_path, current_mode | stat.S_IXUSR)
 
-        # Configurazione ambiente per preservare i colori
         env = os.environ.copy()
         env.update({
-            'PYTHONUNBUFFERED': '1',  # Disabilita il buffering
-            'TERM': 'xterm-256color',  # Supporto 256 colori
-            'FORCE_COLOR': '1',  # Forza colori
-            'CLICOLOR': '1',  # Colori per comandi standard
-            'CLICOLOR_FORCE': '1',  # Forza colori su redirezione
-            'COLORTERM': 'truecolor',  # Abilita colori true-color
-            'LANG': 'en_US.UTF-8',  # Assicura il supporto UTF-8
-            'LC_ALL': 'en_US.UTF-8',  # Forza le impostazioni locali
-            'PYTHONIOENCODING': 'UTF-8'  # Forza encoding Python
+            'PYTHONUNBUFFERED': '1',
+            'TERM': 'xterm-256color',
+            'FORCE_COLOR': '1',
+            'CLICOLOR': '1',
+            'CLICOLOR_FORCE': '1',
+            'COLORTERM': 'truecolor',
+            'LANG': 'en_US.UTF-8',
+            'LC_ALL': 'en_US.UTF-8',
+            'PYTHONIOENCODING': 'UTF-8'
         })
 
-        # Supporto ANSI per Windows
         if os.name == 'nt':
             import ctypes
             kernel32 = ctypes.windll.kernel32
             kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 7)
 
+        # Rimuoviamo il pipe con perl poiché potrebbe interferire con i codici ANSI
         cmd = script_path
-        cmd = script_path + " | perl -pe 's/\\e\\[?.*?[\\@-~]//g'"
 
         try:
             process = subprocess.Popen(
@@ -639,45 +632,53 @@ class SerialInterface(Gtk.Window):
                 shell=shell,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=False,  # Modalità binaria per preservare ANSI
-                bufsize=-1,  # Line buffering
+                text=False,
+                bufsize=1,  # Line buffering
                 env=env,
                 start_new_session=True,
                 cwd=script_dir
             )
 
+            stop_event = Event()
+
+            def flush_streams():
+                """Thread dedicato al flush periodico degli stream"""
+                while not stop_event.is_set() and process.poll() is None:
+                    if process.stdout:
+                        process.stdout.flush()
+                    if process.stderr:
+                        process.stderr.flush()
+                    time.sleep(1)  # Flush ogni secondo
+
             def handle_output(pipe, output_type):
                 try:
                     while True:
-                        # Leggiamo in modalità binaria per preservare i codici ANSI
                         raw_line = pipe.readline()
-                        print(f"Raw bytes: {raw_line!r}")  # Aggiungi questa riga per debug
                         if not raw_line:
                             break
                         if output_callback:
-                            # Decodifica preservando i codici ANSI
                             line = raw_line.decode('utf-8', errors='replace')
-                            # Non facciamo strip() dei caratteri speciali
                             output_callback(line.rstrip('\n\r'), output_type)
                 except Exception as e:
                     if output_callback and not process.poll():
                         output_callback(f"Errore I/O: {str(e)}", 'stderr')
 
             def monitor_completion():
-                """Monitora il completamento del processo"""
                 try:
                     exit_code = process.wait()
+                    stop_event.set()  # Ferma il thread di flush
                     if completion_callback:
                         completion_callback(exit_code)
                 except Exception as e:
                     if output_callback:
                         output_callback(f"Errore nel monitoraggio: {str(e)}", 'stderr')
 
-            # Avvia i thread per gestire output e completamento
+            # Avvia i thread includendo quello per il flush
             threads = [
                 Thread(target=handle_output, args=(process.stdout, 'stdout'), daemon=True),
                 Thread(target=handle_output, args=(process.stderr, 'stderr'), daemon=True),
-                Thread(target=monitor_completion, daemon=True)
+                Thread(target=monitor_completion, daemon=True),
+                Thread(target=flush_streams, daemon=True)
             ]
 
             for thread in threads:
@@ -689,6 +690,7 @@ class SerialInterface(Gtk.Window):
             if output_callback:
                 output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
             raise
+
 
     ####
     ####
