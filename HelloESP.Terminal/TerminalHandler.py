@@ -4,49 +4,61 @@ from array import array
 from gi.repository import Gtk, Gdk, Pango
 from gi.repository import GObject
 
-
 class TerminalHandler:
     def __init__(self):
+        # Terminal setup
         self.tag_table = Gtk.TextTagTable()
         self.terminal_buffer = Gtk.TextBuffer(tag_table=self.tag_table)
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
-
         self.scrollDown = True
 
-        ### Relaxing background
-        # Imposta il colore di sfondo
+        # Terminal styling
         rgba = Gdk.RGBA()
         rgba.parse("#2E3436")
         self.terminal.override_background_color(Gtk.StateFlags.NORMAL, rgba)
 
-        # Imposta il colore del testo
         rgba_text = Gdk.RGBA()
         rgba_text.parse("#FFFFFF")
         self.terminal.override_color(Gtk.StateFlags.NORMAL, rgba_text)
 
-        # Imposta il font
         font = Pango.FontDescription()
         font.set_family("Monospace")
         font.set_weight(Pango.Weight.BOLD)
         font.set_size(12 * Pango.SCALE)
         self.terminal.override_font(font)
 
-        # Configure TextView
+        # Terminal configuration
         self.terminal.set_wrap_mode(Gtk.WrapMode.CHAR)
         self.terminal.set_editable(False)
 
         # Create scrolled window
         self.scrolled_window = Gtk.ScrolledWindow()
-        self.scrolled_window.add(self.terminal)
+
+        # Create a box inside the scrolled window
+        self.terminal_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.scrolled_window.add(self.terminal_box)
+
+        # Setup search first
+        self.setup_search()
+
+        # Add search and terminal to the box
+        self.terminal_box.pack_start(self.search_box, False, False, 0)
+        self.terminal_box.pack_start(self.terminal, True, True, 0)
+
         self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
 
         # Keep reference to the adjustment
         self.vadj = self.scrolled_window.get_vadjustment()
 
-        # Buffer update handling
+        # Initialize search functionality
+        self.setup_search()
+
+        # Keep reference to the adjustment
+        self.vadj = self.scrolled_window.get_vadjustment()
+
+        # Rest of the initialization
         self.pending_updates = []
         self.update_pending = False
-
         self.ansi_pattern = re.compile(r'(?:\\x1b|\x1b)\[([0-9;]*)m')
 
         # ANSI color definitions (standard colors)
@@ -72,6 +84,122 @@ class TerminalHandler:
         }
 
         self._init_tags()
+
+    def setup_search(self):
+        # Search state
+        self.search_highlights = []
+        self.current_match_index = -1
+
+        # Create search bar components
+        self.search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.search_box.set_margin_start(6)
+        self.search_box.set_margin_end(6)
+        self.search_box.set_margin_top(6)
+        self.search_box.set_margin_bottom(6)
+
+        # Create search entry
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_width_chars(30)
+        self.search_entry.connect('changed', self.on_search_changed)
+        self.search_entry.connect('activate', self.on_search_next)
+
+        # Create close button
+        close_button = Gtk.Button.new_from_icon_name('window-close-symbolic', Gtk.IconSize.BUTTON)
+        close_button.connect('clicked', self.hide_search)
+
+        # Pack search components
+        self.search_box.pack_start(self.search_entry, False, True, 0)
+        self.search_box.pack_start(close_button, False, True, 0)
+        self.search_box.hide()  # Hide by default
+
+        # Create search tags
+        self.search_tag = Gtk.TextTag.new('search-highlight')
+        self.search_tag.set_property('background', '#FFE066')
+        self.search_tag.set_property('foreground', '#000000')
+
+        self.current_match_tag = Gtk.TextTag.new('current-match')
+        self.current_match_tag.set_property('background', '#FF9933')
+        self.current_match_tag.set_property('foreground', '#000000')
+
+        self.tag_table.add(self.search_tag)
+        self.tag_table.add(self.current_match_tag)
+
+        # Setup keyboard shortcuts
+        self.terminal.connect('key-press-event', self.on_key_press)
+
+    def on_key_press(self, widget, event):
+        if event.state & Gdk.ModifierType.CONTROL_MASK or event.state & Gdk.ModifierType.META_MASK:
+            if event.keyval == Gdk.KEY_f:
+                self.show_search()
+                return True
+        elif event.keyval == Gdk.KEY_Escape:
+            self.hide_search()
+            return True
+        return False
+
+    def show_search(self):
+        self.search_box.show_all()
+        self.search_entry.grab_focus()
+
+    def hide_search(self, *args):
+        self.search_box.hide()
+        self.clear_highlights()
+        self.terminal.grab_focus()
+
+    def clear_highlights(self):
+        buffer = self.terminal_buffer
+        start = buffer.get_start_iter()
+        end = buffer.get_end_iter()
+        buffer.remove_tag(self.search_tag, start, end)
+        buffer.remove_tag(self.current_match_tag, start, end)
+        self.search_highlights = []
+        self.current_match_index = -1
+
+    def on_search_changed(self, entry):
+        self.clear_highlights()
+        search_text = entry.get_text()
+
+        if not search_text:
+            return
+
+        buffer = self.terminal_buffer
+        text = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), True)
+
+        for match in re.finditer(re.escape(search_text), text, re.IGNORECASE):
+            start_iter = buffer.get_iter_at_offset(match.start())
+            end_iter = buffer.get_iter_at_offset(match.end())
+            buffer.apply_tag(self.search_tag, start_iter, end_iter)
+            self.search_highlights.append((start_iter.get_offset(), end_iter.get_offset()))
+
+        if self.search_highlights:
+            self.current_match_index = 0
+            self.highlight_current_match()
+
+    def highlight_current_match(self):
+        if not self.search_highlights:
+            return
+
+        buffer = self.terminal_buffer
+        start = buffer.get_start_iter()
+        end = buffer.get_end_iter()
+        buffer.remove_tag(self.current_match_tag, start, end)
+
+        start_offset, end_offset = self.search_highlights[self.current_match_index]
+        start_iter = buffer.get_iter_at_offset(start_offset)
+        end_iter = buffer.get_iter_at_offset(end_offset)
+        buffer.apply_tag(self.current_match_tag, start_iter, end_iter)
+
+        self.terminal.scroll_to_iter(start_iter, 0.0, True, 0.0, 0.5)
+
+    def on_search_next(self, *args):
+        if not self.search_highlights:
+            return
+        self.current_match_index = (self.current_match_index + 1) % len(self.search_highlights)
+        self.highlight_current_match()
+
+    def get_widget(self):
+        """Return the main container with search bar and terminal"""
+        return self.scrolled_window
 
     def _init_tags(self):
         # Initialize basic style tags
@@ -397,7 +525,3 @@ class TerminalHandler:
             self.terminal_buffer.delete(line_start, end_iter)
         except Exception as e:
             print(f"Error handling clear to start: {e}")
-
-    def get_widget(self):
-        """Return the scrolled window containing the terminal"""
-        return self.scrolled_window
