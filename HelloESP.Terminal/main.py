@@ -287,7 +287,7 @@ class SerialInterface(Gtk.Window):
         buffer = self.backtrace_textview.get_buffer()
         buffer.set_text(f"Analisi del traceback:\n{input_text}")
 
-        res = self.tracer.read_line(input_text+"\n")
+        res = self.tracer.read_line_thread(input_text)
         buffer.set_text(f"Analisi del traceback:\n{res}")
 
 
@@ -309,13 +309,17 @@ class SerialInterface(Gtk.Window):
                 print("undecoded process input")
 
         def completion(res):
-            print("on_build completion: ", res)
-            if res == 0:
-                self.on_connect_clicked(button)
-            else:
-                print("execute_script completion: ", res)
+            try:
+                print("on_build completion: ", res)
+                if res == 0:
+                    self.on_connect_clicked(button)
+                else:
+                    print("execute_script completion: ", res)
 
-            self.is_building = False
+                if type(res) is int and res >= 0:
+                    self.is_building = False
+            except:
+                pass
 
         self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
 
