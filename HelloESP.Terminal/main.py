@@ -687,7 +687,10 @@ class SerialInterface(Gtk.Window):
 
                     # Attendi che i thread terminino
                     for thread in threads:
-                        thread.join(timeout=1.0)
+                        try:
+                            thread.join(timeout=1.0)
+                        except:
+                            pass
 
                     if completion_callback:
                         completion_callback(exit_code)
