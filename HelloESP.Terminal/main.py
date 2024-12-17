@@ -661,13 +661,16 @@ class SerialInterface(Gtk.Window):
 
             def handle_output(pipe, output_type):
                 try:
-                    while True:
-                        raw_line = pipe.readline()
-                        if not raw_line:
-                            break
-                        if output_callback:
-                            line = raw_line.decode('utf-8', errors='replace')
-                            output_callback(line.rstrip('\n\r'), output_type)
+                    while not stop_event.is_set():  # Aggiungi controllo dell'evento
+                        try:
+                            raw_line = pipe.readline()
+                            if not raw_line:
+                                break
+                            if output_callback:
+                                line = raw_line.decode('utf-8', errors='replace')
+                                output_callback(line.rstrip('\n\r'), output_type)
+                        except IOError:
+                            break  # Esci in modo pulito se lo stream è chiuso
                 except Exception as e:
                     if output_callback and not process.poll():
                         output_callback(f"Errore I/O: {str(e)}", 'stderr')
@@ -675,7 +678,12 @@ class SerialInterface(Gtk.Window):
             def monitor_completion():
                 try:
                     exit_code = process.wait()
-                    stop_event.set()  # Ferma il thread di flush
+                    stop_event.set()  # Ferma i thread
+
+                    # Attendi che i thread terminino
+                    for thread in threads:
+                        thread.join(timeout=1.0)
+
                     if completion_callback:
                         completion_callback(exit_code)
                 except Exception as e:
