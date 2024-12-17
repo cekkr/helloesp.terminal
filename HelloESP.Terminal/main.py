@@ -79,22 +79,14 @@ class SerialInterface(Gtk.Window):
 
         # Area terminale
         self.terminal_handler = TerminalHandler()
-        self.add(self.terminal_handler.get_widget())
+        terminal_box = self.terminal_handler.get_widget()
+        self.add(terminal_box)
         self.terminal = self.terminal_handler.terminal
-        scrolled_window = self.terminal_handler.scrolled_window
+        vbox.pack_start(terminal_box, True, True, 0)
 
-        '''
-        scrolled_window = Gtk.ScrolledWindow()
-        scrolled_window.set_hexpand(True)
-        scrolled_window.set_vexpand(True)        
-        '''
-
-        vbox.pack_start(scrolled_window, True, True, 0)
-
-        #self.terminal = Gtk.TextView()
-        #self.terminal.set_editable(False)
-        #self.terminal.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
-        #self.terminal_buffer = self.terminal.get_buffer()
+        #####
+        #####
+        #####
 
         # Imposta font monospace per il terminale
         # Create a CSS provider

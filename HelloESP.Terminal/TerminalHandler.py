@@ -29,10 +29,7 @@ class TerminalHandler:
         font.set_size(12 * Pango.SCALE)
         self.terminal.override_font(font)
 
-        ###
-        ### Selection color
-        ###
-        # Creare un provider CSS
+        # Selection color
         css_provider = Gtk.CssProvider()
         css = """
                 textview text selection {
@@ -46,28 +43,38 @@ class TerminalHandler:
         context = self.terminal.get_style_context()
         context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        ####
-        ####
-
         # Terminal configuration
         self.terminal.set_wrap_mode(Gtk.WrapMode.CHAR)
         self.terminal.set_editable(False)
 
-        # Create scrolled window
-        self.scrolled_window = Gtk.ScrolledWindow()
-
-        # Create a box inside the scrolled window
-        self.terminal_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        self.scrolled_window.add(self.terminal_box)
+        # Create the main container box
+        self.main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        self.main_box.set_vexpand(True)
+        self.main_box.set_hexpand(True)
+        self.main_box.set_vexpand_set(True)
+        self.main_box.set_hexpand_set(True)
 
         # Setup search first
         self.setup_search()
 
-        # Add search and terminal to the box
-        self.terminal_box.pack_start(self.search_box, False, False, 0)
-        self.terminal_box.pack_start(self.terminal, True, True, 0)
+        # Add search box to main container (will stay at top)
+        self.main_box.pack_start(self.search_box, False, False, 0)
 
+        # Create scrolled window for terminal only
+        self.scrolled_window = Gtk.ScrolledWindow()
         self.scrolled_window.set_policy(Gtk.PolicyType.AUTOMATIC, Gtk.PolicyType.AUTOMATIC)
+
+        # Make scrolled window expand and fill
+        self.scrolled_window.set_vexpand(True)
+        self.scrolled_window.set_hexpand(True)
+        self.scrolled_window.set_vexpand_set(True)
+        self.scrolled_window.set_hexpand_set(True)
+
+        # Add terminal directly to scrolled window
+        self.scrolled_window.add(self.terminal)
+
+        # Add scrolled window to main container
+        self.main_box.pack_start(self.scrolled_window, True, True, 0)
 
         # Keep reference to the adjustment
         self.vadj = self.scrolled_window.get_vadjustment()
@@ -79,7 +86,6 @@ class TerminalHandler:
 
         # ANSI color definitions (standard colors)
         self.colors = {
-            # Standard colors (30-37)
             '0': '#000000',  # Black
             '1': '#CD0000',  # Red
             '2': '#00CD00',  # Green
@@ -88,7 +94,6 @@ class TerminalHandler:
             '5': '#CD00CD',  # Magenta
             '6': '#00CDCD',  # Cyan
             '7': '#E5E5E5',  # White
-            # Bright colors (90-97)
             '8': '#7F7F7F',  # Bright Black (Gray)
             '9': '#FF0000',  # Bright Red
             '10': '#00FF00',  # Bright Green
@@ -100,6 +105,48 @@ class TerminalHandler:
         }
 
         self._init_tags()
+
+    def setup_search(self):
+        # Search state
+        self.search_highlights = []
+        self.current_match_index = -1
+
+        # Create search bar components
+        self.search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.search_box.set_margin_start(6)
+        self.search_box.set_margin_end(6)
+        self.search_box.set_margin_top(6)
+        self.search_box.set_margin_bottom(6)
+
+        # Create search entry
+        self.search_entry = Gtk.SearchEntry()
+        self.search_entry.set_width_chars(30)
+        self.search_entry.connect('changed', self.on_search_changed)
+        self.search_entry.connect('activate', self.on_search_next)
+
+        # Create close button
+        close_button = Gtk.Button.new_from_icon_name('window-close-symbolic', Gtk.IconSize.BUTTON)
+        close_button.connect('clicked', self.hide_search)
+
+        # Pack search components
+        self.search_box.pack_start(self.search_entry, False, True, 0)
+        self.search_box.pack_start(close_button, False, True, 0)
+        self.search_box.hide()  # Hide by default
+
+        # Create search tags
+        self.search_tag = Gtk.TextTag.new('search-highlight')
+        self.search_tag.set_property('background', '#FFE066')
+        self.search_tag.set_property('foreground', '#000000')
+
+        self.current_match_tag = Gtk.TextTag.new('current-match')
+        self.current_match_tag.set_property('background', '#FF9933')
+        self.current_match_tag.set_property('foreground', '#000000')
+
+        self.tag_table.add(self.search_tag)
+        self.tag_table.add(self.current_match_tag)
+
+        # Setup keyboard shortcuts
+        self.terminal.connect('key-press-event', self.on_key_press)
 
     def check_line_limit(self):
         """Check if the buffer exceeds the maximum line limit and remove oldest lines if necessary"""
@@ -125,10 +172,23 @@ class TerminalHandler:
             # Delete the excess lines
             buffer.delete(start_iter, end_iter)
 
-            # Adjust scroll position to maintain relative position from bottom
-            GObject.idle_add(lambda: self._adjust_scroll_position(distance_from_bottom))
+            # Force the TextView to re-render
+            def refresh_view():
+                # Force a redraw by temporarily changing the buffer
+                temp_mark = buffer.create_mark(None, buffer.get_start_iter(), True)
+                self.terminal.scroll_mark_onscreen(temp_mark)
+                buffer.delete_mark(temp_mark)
 
-            # Return True if lines were removed
+                # Now adjust the scroll position
+                self._adjust_scroll_position(distance_from_bottom)
+
+                # Schedule another redraw after a short delay to ensure stability
+                GObject.timeout_add(100, lambda: self.terminal.queue_draw())
+                return False
+
+            # Schedule the refresh
+            GObject.idle_add(refresh_view)
+
             return True
         return False
 
@@ -144,6 +204,9 @@ class TerminalHandler:
             # Otherwise, try to maintain the same relative position
             new_value = new_upper - distance_from_bottom
             adj.set_value(max(0, min(new_value, new_upper - adj.get_page_size())))
+
+        # Force a redraw of the TextView
+        self.terminal.queue_draw()
 
     def _process_updates(self):
         """Process pending text updates in the main loop"""
@@ -187,48 +250,6 @@ class TerminalHandler:
 
         self.update_pending = False
         return False
-
-    def setup_search(self):
-        # Search state
-        self.search_highlights = []
-        self.current_match_index = -1
-
-        # Create search bar components
-        self.search_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        self.search_box.set_margin_start(6)
-        self.search_box.set_margin_end(6)
-        self.search_box.set_margin_top(6)
-        self.search_box.set_margin_bottom(6)
-
-        # Create search entry
-        self.search_entry = Gtk.SearchEntry()
-        self.search_entry.set_width_chars(30)
-        self.search_entry.connect('changed', self.on_search_changed)
-        self.search_entry.connect('activate', self.on_search_next)
-
-        # Create close button
-        close_button = Gtk.Button.new_from_icon_name('window-close-symbolic', Gtk.IconSize.BUTTON)
-        close_button.connect('clicked', self.hide_search)
-
-        # Pack search components
-        self.search_box.pack_start(self.search_entry, False, True, 0)
-        self.search_box.pack_start(close_button, False, True, 0)
-        self.search_box.hide()  # Hide by default
-
-        # Create search tags
-        self.search_tag = Gtk.TextTag.new('search-highlight')
-        self.search_tag.set_property('background', '#FFE066')
-        self.search_tag.set_property('foreground', '#000000')
-
-        self.current_match_tag = Gtk.TextTag.new('current-match')
-        self.current_match_tag.set_property('background', '#FF9933')
-        self.current_match_tag.set_property('foreground', '#000000')
-
-        self.tag_table.add(self.search_tag)
-        self.tag_table.add(self.current_match_tag)
-
-        # Setup keyboard shortcuts
-        self.terminal.connect('key-press-event', self.on_key_press)
 
     def on_key_press(self, widget, event):
         if event.state & Gdk.ModifierType.CONTROL_MASK or event.state & Gdk.ModifierType.META_MASK:
@@ -302,7 +323,7 @@ class TerminalHandler:
 
     def get_widget(self):
         """Return the main container with search bar and terminal"""
-        return self.scrolled_window
+        return self.main_box
 
     def _init_tags(self):
         # Initialize basic style tags
