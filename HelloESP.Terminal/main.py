@@ -640,7 +640,7 @@ class SerialInterface(Gtk.Window):
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 text=False,  # Modalità binaria per preservare ANSI
-                bufsize=1,  # Line buffering
+                bufsize=-1,  # Line buffering
                 env=env,
                 start_new_session=True,
                 cwd=script_dir
