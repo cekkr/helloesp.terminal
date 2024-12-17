@@ -320,6 +320,9 @@ class SerialInterface(Gtk.Window):
             print("on_build completion: ", res)
             if res == 0:
                 self.on_connect_clicked(button)
+            else:
+                print("execute_script completion: ", res)
+
             self.is_building = False
 
         self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
@@ -597,6 +600,8 @@ class SerialInterface(Gtk.Window):
         import sys
         import locale
 
+        print("execute_script called")
+
         script_path = os.path.abspath(script_path)
         script_dir = os.path.dirname(script_path)
 
@@ -689,6 +694,7 @@ class SerialInterface(Gtk.Window):
                 except Exception as e:
                     if output_callback:
                         output_callback(f"Errore nel monitoraggio: {str(e)}", 'stderr')
+                        completion_callback(-1)
 
             # Avvia i thread includendo quello per il flush
             threads = [
@@ -706,6 +712,7 @@ class SerialInterface(Gtk.Window):
         except Exception as e:
             if output_callback:
                 output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
+                completion_callback(-1)
             raise
 
 
