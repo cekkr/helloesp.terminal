@@ -116,12 +116,34 @@ class TerminalHandler:
             # Get iterator for the end of the lines to remove
             end_iter = buffer.get_iter_at_line(lines_to_remove)
 
+            # Store the current position relative to the bottom
+            adj = self.vadj
+            old_upper = adj.get_upper()
+            old_value = adj.get_value()
+            distance_from_bottom = old_upper - old_value
+
             # Delete the excess lines
             buffer.delete(start_iter, end_iter)
+
+            # Adjust scroll position to maintain relative position from bottom
+            GObject.idle_add(lambda: self._adjust_scroll_position(distance_from_bottom))
 
             # Return True if lines were removed
             return True
         return False
+
+    def _adjust_scroll_position(self, distance_from_bottom):
+        """Adjust scroll position after line removal to maintain viewing position"""
+        adj = self.vadj
+        new_upper = adj.get_upper()
+
+        # If we were scrolled near the bottom, stay at bottom
+        if distance_from_bottom < adj.get_page_size():
+            adj.set_value(new_upper - adj.get_page_size())
+        else:
+            # Otherwise, try to maintain the same relative position
+            new_value = new_upper - distance_from_bottom
+            adj.set_value(max(0, min(new_value, new_upper - adj.get_page_size())))
 
     def _process_updates(self):
         """Process pending text updates in the main loop"""
@@ -150,7 +172,7 @@ class TerminalHandler:
 
                 # Check line limit after each update
                 if self.check_line_limit():
-                    #self.scrollDown = True
+                    self.scrollDown = True
                     pass
 
             adj = self.vadj
