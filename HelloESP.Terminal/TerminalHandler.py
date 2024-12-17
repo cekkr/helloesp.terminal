@@ -6,7 +6,7 @@ from gi.repository import GObject
 
 
 class TerminalHandler:
-    def __init__(self, max_lines=1000):
+    def __init__(self, max_lines=10000):
         # Terminal setup
         self.max_lines = max_lines  # Maximum number of lines to keep
         self.tag_table = Gtk.TextTagTable()
@@ -149,7 +149,8 @@ class TerminalHandler:
                 self.terminal_buffer.delete_mark(mark)
 
                 # Check line limit after each update
-                self.check_line_limit()
+                if self.check_line_limit():
+                    self.scrollDown = True
 
             adj = self.vadj
             if adj and self.scrollDown:
