@@ -150,7 +150,8 @@ class TerminalHandler:
 
                 # Check line limit after each update
                 if self.check_line_limit():
-                    self.scrollDown = True
+                    #self.scrollDown = True
+                    pass
 
             adj = self.vadj
             if adj and self.scrollDown:
