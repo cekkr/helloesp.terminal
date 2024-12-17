@@ -607,7 +607,7 @@ class SerialInterface(Gtk.Window):
 
         env = os.environ.copy()
         env.update({
-            #'PYTHONUNBUFFERED': '1',
+            'PYTHONUNBUFFERED': '1',
             'TERM': 'xterm-256color',
             'FORCE_COLOR': '1',
             'CLICOLOR': '1',
@@ -615,7 +615,7 @@ class SerialInterface(Gtk.Window):
             'COLORTERM': 'truecolor',
             'LANG': 'en_US.UTF-8',
             'LC_ALL': 'en_US.UTF-8',
-            #'PYTHONIOENCODING': 'UTF-8'
+            'PYTHONIOENCODING': 'UTF-8'
         })
 
         if os.name == 'nt':
@@ -643,12 +643,18 @@ class SerialInterface(Gtk.Window):
 
             def flush_streams():
                 """Thread dedicato al flush periodico degli stream"""
-                while not stop_event.is_set() and process.poll() is None:
-                    if process.stdout:
-                        process.stdout.flush()
-                    if process.stderr:
-                        process.stderr.flush()
-                    time.sleep(1)  # Flush ogni secondo
+                try:
+                    while not stop_event.is_set() and process.poll() is None:
+                        try:
+                            if process.stdout:
+                                process.stdout.flush()
+                            if process.stderr:
+                                process.stderr.flush()
+                        except:
+                            pass
+                        time.sleep(1)  # Flush ogni secondo
+                except:
+                    print("flush_streams blocked")
 
             def handle_output(pipe, output_type):
                 try:
