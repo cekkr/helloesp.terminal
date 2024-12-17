@@ -11,6 +11,8 @@ class TerminalHandler:
         self.terminal_buffer = Gtk.TextBuffer(tag_table=self.tag_table)
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
 
+        self.scrollDown = True
+
         ### Relaxing background
         # Imposta il colore di sfondo
         rgba = Gdk.RGBA()
@@ -192,7 +194,7 @@ class TerminalHandler:
                 self.terminal_buffer.delete_mark(mark)
 
             adj = self.vadj
-            if adj:
+            if adj and self.scrollDown:
                 GObject.idle_add(
                     lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
                     priority=GObject.PRIORITY_LOW
@@ -228,6 +230,17 @@ class TerminalHandler:
     def append_terminal(self, text):
         if not text:
             return
+
+        adj = self.vadj
+        current_pos = adj.get_value()
+        # Calcola la differenza tra la posizione massima e quella corrente
+        max_pos = adj.get_upper() - adj.get_page_size()
+        distance_from_bottom = max_pos - current_pos
+
+        if distance_from_bottom <= 10 or max_pos <= 0:
+            self.scrollDown = True
+        else:
+            self.scrollDown = False
 
         try:
             text = self.normalize_ansi(text)

@@ -358,6 +358,9 @@ class SerialInterface(Gtk.Window):
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
 
+        if command:
+            self.terminal_handler.scrollDown = True
+
         if command == "clear":
             self.on_reset_clicked()
             self.cmd_entry.set_text("")
