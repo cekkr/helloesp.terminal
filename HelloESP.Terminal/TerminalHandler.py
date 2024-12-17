@@ -237,7 +237,7 @@ class TerminalHandler:
         max_pos = adj.get_upper() - adj.get_page_size()
         distance_from_bottom = max_pos - current_pos
 
-        if distance_from_bottom <= 10 or max_pos <= 0:
+        if distance_from_bottom <= 30 or max_pos <= 0:
             self.scrollDown = True
         else:
             self.scrollDown = False

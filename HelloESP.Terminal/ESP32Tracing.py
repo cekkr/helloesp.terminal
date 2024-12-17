@@ -1,4 +1,5 @@
 import datetime
+import threading
 
 import serial
 import re
@@ -259,6 +260,9 @@ class ESP32BacktraceParser:
         return addresses
 
     def read_line(self, input):
+        threading.Thread(target=self.read_line_thread, args=(input,)).start()
+
+    def read_line_thread(self, input):
         lines = (input+"\n").split('\n')
 
         self.results = ""
@@ -391,7 +395,7 @@ class ESP32BacktraceParser:
         self.results += what
         #logger.error(what)
 
-    def process_crash(self, crash_info: Dict):
+    def process_crash(self, crash_info: Dict): # deprecated
         """
         Processa e logga le informazioni complete sul crash.
 
