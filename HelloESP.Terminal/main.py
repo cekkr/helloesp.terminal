@@ -545,7 +545,8 @@ class SerialInterface(Gtk.Window):
         for port in ports:
             self.port_combo.append_text(port.device)
         if ports:
-            self.port_combo.set_active(0)
+            # Imposta l'ultima porta come default invece della prima
+            self.port_combo.set_active(len(ports) - 1)
 
     def on_refresh_clicked(self, button):
         self.refresh_ports()
