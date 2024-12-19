@@ -62,6 +62,7 @@ class StreamHandler:
 
                 if not found_start:
                     # Se non troviamo tag di inizio, processiamo tutto il buffer
+                    self.buffer = self.buffer.replace('\r', '')
                     if self.buffer:
                         self.default_callback(self.buffer)
                         self.buffer = ""

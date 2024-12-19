@@ -85,15 +85,35 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         Tuple of (success, message)
     """
 
+    ser.block_serial = True
+    ser.redirect_serial = not ser.block_serial
+
+    def done():
+        if ser.block_serial:
+            ser.block_serial = False
+            ser.redirect_serial = False
+
     thisLine = ""
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
-        if ser.last_serial_output is not None:
+
+        line = ""
+
+        ifData = ser.serial_conn.in_waiting if ser.block_serial else ser.last_serial_output is not None
+        if ifData:
+            start_time = time.time()
+
             try:
-                data = ser.last_serial_output
-                ser.last_serial_output = None
-                #print("serial read data: ", data)
-                line = safe_decode(data)
+                data = None
+
+                if ser.block_serial:
+                    data = ser.serial_conn.read(ser.serial_conn.in_waiting)
+                    print("serial read data: ", data)
+                else:
+                    data = ser.last_serial_output
+                    ser.last_serial_output = None
+
+                line = safe_decode(data) if data is not None else ""
 
             except Exception as e:
                 print("Debug read exception: ", data)
@@ -101,7 +121,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
             thisLine += line
 
-        if '\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.1):
+        if '\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.5):
             line = thisLine
 
             esp_tag = parse_esp32_log(line)
@@ -124,10 +144,10 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
             # Process actual responses
             if line.startswith("OK:"):
-                ser.flush()
+                done()
                 return True, line[3:].strip()
             elif line.startswith("ERROR:"):
-                ser.flush()
+                done()
                 return False, line[6:].strip()
             else:
                 spl = thisLine.split('\n')
@@ -136,12 +156,18 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 else:
                     thisLine = ""
 
-                ser.flush()
-
         time.sleep(0.01)
 
+    done()
     raise SerialCommandError("Timeout waiting for response")
 
+def cmd_start(ser: SerialInterface):
+    ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
+    ser.serial_conn.flush()
+
+def cmd_end(ser: SerialInterface):
+    ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
+    ser.serial_conn.flush()
 
 def send_buffer(serInt : SerialInterface, buffer, ping=True):
     ser = serInt.serial_conn
@@ -149,7 +175,7 @@ def send_buffer(serInt : SerialInterface, buffer, ping=True):
     if ping:
         ser.write("$$$PING$$$\n".encode('utf8'))
         ser.flush()
-        success, msg = wait_for_response(ser)
+        success, msg = wait_for_response(serInt)
 
         if not success:
             print("Ping unsuccessful: " + msg)
@@ -165,6 +191,8 @@ def send_buffer(serInt : SerialInterface, buffer, ping=True):
 
 def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tuple[bool, str]:
     """Write data to device with chunk verification."""
+
+    cmd_start(serInterface)
 
     ser = serInterface.serial_conn
 
@@ -207,7 +235,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
             command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
             send_buffer(ser, command, ping=False)
 
-            success, message = wait_for_response(ser)
+            success, message = wait_for_response(serInterface)
             if not success:
                 return False, f"Chunk prep failed: {message}"
 
@@ -227,9 +255,13 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
         send_buffer(ser, command.encode('utf8'))
-        return wait_for_response(ser)
+
+        resp = wait_for_response(serInterface)
+        cmd_end(serInterface)
+        return resp
 
     except Exception as e:
+        cmd_end(serInterface)
         return False, f"Transfer error: {str(e)}"
 
 
@@ -240,10 +272,16 @@ def validate_file_size(data: bytes) -> bool:
 
 def check_existing_file(ser : SerialInterface, filename: str, size: int) -> bool:
     """Check if file exists with same size."""
+
+    cmd_start(ser)
+
     command = f"$$$CHECK_FILE$$${filename}\n"
     send_buffer(ser, command)
 
     success, message = wait_for_response(ser)
+
+    cmd_end(ser)
+
     if success:
         try:
             existing_size = int(message.split(':')[0])
@@ -273,6 +311,8 @@ def read_file(ser: SerialInterface, filename: str) -> bytes:
         File contents as bytes
     """
     try:
+        cmd_start(ser)
+
         validate_filename(filename)
 
         command = f"$$$READ_FILE$$${filename}\n"
@@ -315,14 +355,18 @@ def read_file(ser: SerialInterface, filename: str) -> bytes:
 
         # Wait for final OK
         success, message = wait_for_response(ser)
+
         if not success:
             raise SerialCommandError(f"Error after reading file: {message}")
 
+        cmd_end(ser)
         return bytes(data)
 
     except (serial.SerialException, FileValidationError) as e:
+        cmd_end(ser)
         raise SerialCommandError(str(e))
     except Exception as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Error reading file: {str(e)}")
 
 
@@ -337,6 +381,8 @@ def list_files(ser : SerialInterface) -> List[Tuple[str, int]]:
         List of tuples containing (filename, size)
     """
     try:
+        cmd_start(ser)
+
         command = "$$$LIST_FILES$$$\n"
         send_buffer(ser, command)
 
@@ -357,11 +403,14 @@ def list_files(ser : SerialInterface) -> List[Tuple[str, int]]:
                 except ValueError:
                     raise SerialCommandError(f"Invalid file entry format: {entry}")
 
+        cmd_end(ser)
         return files
 
     except serial.SerialException as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Serial communication error: {str(e)}")
     except Exception as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Error listing files: {str(e)}")
 
 
@@ -380,6 +429,8 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
     """
 
     try:
+        cmd_start(ser)
+
         # Format command with proper prefix and termination
         formatted_command = f"$$$CMD$$${command}\n"
 
@@ -387,7 +438,9 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
         send_buffer(ser, formatted_command)
 
         # Wait for and parse response
-        success, response = wait_for_response(serInt=serInt)
+        success, response = wait_for_response(ser)
+
+        cmd_end(ser)
         if not success:
             raise SerialCommandError(f"Command failed: {response}")
 
@@ -403,8 +456,10 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
             return True, response
 
     except serial.SerialException as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Serial communication error: {str(e)}")
     except Exception as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Error executing command: {str(e)}")
 
 def delete_file(ser : SerialInterface, filename: str) -> Tuple[bool, str]:
@@ -419,15 +474,21 @@ def delete_file(ser : SerialInterface, filename: str) -> Tuple[bool, str]:
         Tuple of (success, message)
     """
     try:
+        cmd_start(ser)
+
         validate_filename(filename)
 
         command = f"$$$DELETE_FILE$$${filename}\n"
         send_buffer(ser, command)
 
-        return wait_for_response(ser)
+        resp = wait_for_response(ser)
+
+        cmd_end(ser)
 
     except (serial.SerialException, FileValidationError) as e:
+        cmd_end(ser)
         raise SerialCommandError(str(e))
     except Exception as e:
+        cmd_end(ser)
         raise SerialCommandError(f"Error deleting file: {str(e)}")
 

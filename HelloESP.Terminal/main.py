@@ -1,6 +1,7 @@
 import stat
 import subprocess
 import threading
+from datetime import time
 from pathlib import Path
 
 import gi
@@ -428,6 +429,7 @@ class SerialInterface(Gtk.Window):
                 self.files_store.append([filename, size_str, "-"])
             self.show_status(f"Trovati {len(files)} file")
         except SerialCommandError as e:
+            cmd_end(self)
             self.show_status(f"Errore: {str(e)}")
             self.append_terminal(f"Errore lettura file: {str(e)}\n")
 
@@ -836,23 +838,27 @@ class SerialInterface(Gtk.Window):
                 if text:
                     if not self.redirect_serial:
                         self.append_terminal(text)
+                        self.last_serial_output = text.encode()
                     else:
                         if self.last_serial_output is None:
                             self.last_serial_output = text.encode()
                         else:
                             self.last_serial_output.extend(text.encode())
             try:
-                timeout = time.time() + 0.1  # Timeout di 0.1 secondi
+                timeout = time.time() + 0.5  # Timeout di 0.1 secondi
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
-                        continue
+                        return
 
                     if time.time() > timeout:
                         # Se c'è del testo nel buffer lo processiamo prima di uscire
-                        send(self.buffer)
-                        self.buffer = ""
+                        if len(self.buffer) > 0:
+                            send(self.buffer)
+                            self.buffer = ""
 
                     if self.serial_conn.in_waiting:
+                        timeout = time.time() + 0.1  # Reset del timeout
+
                         text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
                         self.buffer += text
 
@@ -860,9 +866,11 @@ class SerialInterface(Gtk.Window):
 
                         if len(lines) > 1:
                             self.buffer = lines.pop()
-                            timeout = time.time() + 0.1  # Reset del timeout
                         else:
-                            self.buffer = ""
+                            if time.time() < timeout:
+                                continue
+                            else:
+                                self.buffer = ""
 
                         for line in lines:
                             send(line)
@@ -874,7 +882,7 @@ class SerialInterface(Gtk.Window):
                 self.connect_button.set_label("Connetti")
                 return False
             except Exception as e:
-                self.append_terminal(buffer)
+                self.append_terminal(self.buffer)
                 return False
 
             return True
