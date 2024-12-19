@@ -65,8 +65,16 @@ class MonitorWidget:
         """Update the monitor text"""
         self.buffer.set_text(text)
 
+    def clear(self):
+        self.buffer.set_text("")
+
     def append_text(self, text):
         """Append text to the monitor"""
+
+        if '!!clear!!' in text:
+            self.clear()
+            text = text.replace('!!clear!!', '')
+
         end_iter = self.buffer.get_end_iter()
         self.buffer.insert(end_iter, text + "\n")
         # Scroll to the bottom

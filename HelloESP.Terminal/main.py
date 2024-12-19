@@ -6,6 +6,7 @@ from pathlib import Path
 import gi
 
 from MonitorWidget import MonitorWidget
+from StreamHandler import StreamHandler
 
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
@@ -28,6 +29,7 @@ from TerminalHandler import *
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
+        self.buffer = ""
         self.esp_path = os.getenv('IDF_PATH')
         self.project_path = "/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
         self._espressif_path = None
@@ -36,6 +38,8 @@ class SerialInterface(Gtk.Window):
         self.redirect_serial = False
         self.block_serial = False
         self.last_serial_output = None
+
+        self.init_receiver()
 
         super().__init__(title="HelloESP Monitor")
         self.set_border_width(10)
@@ -155,6 +159,25 @@ class SerialInterface(Gtk.Window):
 
         # Test del monitor
         self.monitor_widget.append_text("Tasks monitor")
+
+    ###
+    ###
+    ###
+
+    def init_receiver(self):
+        def on_received_normal(text):
+            self.update_tracing(text)
+            self.terminal_handler.append_terminal(text + '\n')
+
+        def on_received_monitor(text):
+            self.monitor_widget.append_text(text)
+
+        self.stream_handler = StreamHandler(on_received_normal)
+        self.stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
+
+    ###
+    ###
+    ###
 
     def setup_backtrace_zone(self, parent_box):
         ###
@@ -283,6 +306,10 @@ class SerialInterface(Gtk.Window):
         # Area stato operazioni
         self.status_bar = Gtk.Statusbar()
         file_box.pack_start(self.status_bar, False, False, 0)
+
+    ###
+    ###
+    ###
 
     def backtrace_on_toggle_button_clicked(self, button):
         if button.get_active():
@@ -804,22 +831,41 @@ class SerialInterface(Gtk.Window):
 
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
+
+            def send(text):
+                if text:
+                    if not self.redirect_serial:
+                        self.append_terminal(text)
+                    else:
+                        if self.last_serial_output is None:
+                            self.last_serial_output = text.encode()
+                        else:
+                            self.last_serial_output.extend(text.encode())
             try:
+                timeout = time.time() + 0.1  # Timeout di 0.1 secondi
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
                         continue
 
-                    if not self.redirect_serial:
-                        data = self.serial_conn.read(self.serial_conn.in_waiting)
-                        rec = safe_decode(data)
-                        self.update_tracing(rec)
-                        self.append_terminal(data.decode('utf8', errors='replace'))
-                    else:
-                        data = self.serial_conn.read(self.serial_conn.in_waiting)
-                        if self.last_serial_output is None:
-                            self.last_serial_output = data
+                    if time.time() > timeout:
+                        # Se c'è del testo nel buffer lo processiamo prima di uscire
+                        send(self.buffer)
+                        self.buffer = ""
+
+                    if self.serial_conn.in_waiting:
+                        text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
+                        self.buffer += text
+
+                        lines = self.buffer.split('\n')
+
+                        if len(lines) > 1:
+                            self.buffer = lines.pop()
+                            timeout = time.time() + 0.1  # Reset del timeout
                         else:
-                            self.last_serial_output.extend(data)
+                            self.buffer = ""
+
+                        for line in lines:
+                            send(line)
 
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
@@ -828,23 +874,14 @@ class SerialInterface(Gtk.Window):
                 self.connect_button.set_label("Connetti")
                 return False
             except Exception as e:
-                #print("Data undecoded: ", data)
-                self.append_terminal(rec)
+                self.append_terminal(buffer)
                 return False
 
             return True
         return False
 
     def append_terminal(self, text):
-        if self.tracer is not None:
-            text = self.tracer.replace_memory_addresses(text)
-        self.terminal_handler.append_terminal(text + '\n')
-        return
-
-        end_iter = self.terminal_buffer.get_end_iter()
-        self.terminal_buffer.insert(end_iter, text)
-        # Auto-scroll
-        self.terminal.scroll_to_iter(self.terminal_buffer.get_end_iter(), 0.0, False, 0.0, 0.0)
+        self.stream_handler.process_string(text)
 
 
 def main():
