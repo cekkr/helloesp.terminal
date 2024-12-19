@@ -5,6 +5,8 @@ from pathlib import Path
 
 import gi
 
+from MonitorWidget import MonitorWidget
+
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
 import serial
@@ -31,7 +33,9 @@ class SerialInterface(Gtk.Window):
         self._espressif_path = None
 
         self.is_building = False
+        self.redirect_serial = False
         self.block_serial = False
+        self.last_serial_output = None
 
         super().__init__(title="HelloESP Monitor")
         self.set_border_width(10)
@@ -144,6 +148,13 @@ class SerialInterface(Gtk.Window):
         # Pannello File Manager
         self.setup_file_manager()
         self.setup_backtrace_zone(vbox)
+
+        # Monitor widget
+        self.monitor_widget = MonitorWidget(self)
+        controls_box.pack_start(self.monitor_widget.get_toggle_button(), False, False, 0)
+
+        # Test del monitor
+        self.monitor_widget.append_text("Tasks monitor")
 
     def setup_backtrace_zone(self, parent_box):
         ###
@@ -285,6 +296,7 @@ class SerialInterface(Gtk.Window):
         # Qui puoi implementare la logica per processare il traceback
         input_text = self.backtrace_entry.get_text()
         buffer = self.backtrace_textview.get_buffer()
+        input_text = input_text.replace('\\n', '\n')
         buffer.set_text(f"Analisi del traceback:\n{input_text}")
 
         res = self.tracer.read_line_thread(input_text)
@@ -335,7 +347,7 @@ class SerialInterface(Gtk.Window):
 
     def thread_execute_command(self, command):
         try:
-            self.block_serial = True
+            self.redirect_serial = True
             success, response = execute_command(self, command)
             if success:
                 self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
@@ -352,7 +364,7 @@ class SerialInterface(Gtk.Window):
                 print(e)
         finally:
             self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
-            self.block_serial = False
+            self.redirect_serial = False
 
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
@@ -375,7 +387,7 @@ class SerialInterface(Gtk.Window):
             return
 
         try:
-            files = list_files(self.serial_conn)
+            files = list_files(self)
             self.files_store.clear()
             for filename, size in files:
                 # Formatta dimensione in KB/MB
@@ -398,7 +410,7 @@ class SerialInterface(Gtk.Window):
 
 
     def upload_file(self, base_name, data):
-        self.block_serial = True
+        self.redirect_serial = True
 
         try:
             success, msg = write_file(self, base_name, data)
@@ -412,7 +424,7 @@ class SerialInterface(Gtk.Window):
         except:
             pass
 
-        self.block_serial = False
+        self.redirect_serial = False
 
     def on_upload_file(self, button):
         """Handler upload file"""
@@ -478,7 +490,7 @@ class SerialInterface(Gtk.Window):
         if response == Gtk.ResponseType.OK:
             save_path = dialog.get_filename()
             try:
-                data = read_file(self.serial_conn, filename)
+                data = read_file(self, filename)
                 with open(save_path, 'wb') as f:
                     f.write(data)
                 self.show_status(f"File {filename} scaricato con successo")
@@ -517,7 +529,7 @@ class SerialInterface(Gtk.Window):
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
             try:
-                success, msg = delete_file(self.serial_conn, filename)
+                success, msg = delete_file(self, filename)
                 if success:
                     self.show_status(f"File {filename} eliminato")
                     self.append_terminal(f"File eliminato: {filename}\n")
@@ -793,12 +805,22 @@ class SerialInterface(Gtk.Window):
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
             try:
-                while self.serial_conn.in_waiting and not self.block_serial:
-                    data = self.serial_conn.read(self.serial_conn.in_waiting)
-                    rec = safe_decode(data)
-                    self.update_tracing(rec)
+                while self.serial_conn.in_waiting:
+                    if self.block_serial:
+                        continue
 
-                    self.append_terminal(data.decode('utf8', errors='replace'))
+                    if not self.redirect_serial:
+                        data = self.serial_conn.read(self.serial_conn.in_waiting)
+                        rec = safe_decode(data)
+                        self.update_tracing(rec)
+                        self.append_terminal(data.decode('utf8', errors='replace'))
+                    else:
+                        data = self.serial_conn.read(self.serial_conn.in_waiting)
+                        if self.last_serial_output is None:
+                            self.last_serial_output = data
+                        else:
+                            self.last_serial_output.extend(data)
+
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
                 self.serial_conn.close()

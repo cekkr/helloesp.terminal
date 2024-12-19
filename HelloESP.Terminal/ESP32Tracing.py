@@ -393,7 +393,7 @@ class ESP32BacktraceParser:
     def log(self, what):
         print(what)
         self.serialInterface.append_terminal("\x1b[31m"+what+"\x1b[0m\n")
-        self.results += what
+        self.results += what + '\n'
         #logger.error(what)
 
     '''
