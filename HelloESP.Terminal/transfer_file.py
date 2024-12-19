@@ -88,16 +88,18 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
     ser.block_serial = True
     ser.redirect_serial = not ser.block_serial
 
+    thisLine = ""
+
     def done():
         if ser.block_serial:
-            ser.block_serial = False
-            ser.redirect_serial = False
+            ser.block_serial = ser.block_serial # False # wait for cmd_end()
+        ser.redirect_serial = False
 
-    thisLine = ""
+        if len(thisLine) > 0:
+            ser.append_terminal(thisLine)
+
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
-
-        line = ""
 
         ifData = ser.serial_conn.in_waiting if ser.block_serial else ser.last_serial_output is not None
         if ifData:
@@ -115,10 +117,11 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 line = safe_decode(data) if data is not None else ""
 
                 if '!!TASKMONITOR' in line:
-                    raise Exception("TASKMONITOR data found in wait_for_response")
+                    raise Exception("TASKMONITOR data found")
 
             except Exception as e:
-                print("Debug read exception: ", data)
+                print("wait_for_response exception: ", data)
+                done()
                 raise e
 
             thisLine += line
@@ -165,15 +168,18 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
 def cmd_start(ser: SerialInterface):
     print("CMD: SILENCE_ON")
+    ser.serial_conn.flush()
     ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
     ser.serial_conn.flush()
+    time.sleep(0.1)
     ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
-    time.sleep(0.5)
+    ser.block_serial = True
 
 def cmd_end(ser: SerialInterface):
     print("CMD: SILENCE_OFF")
-    ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
     ser.serial_conn.flush()
+    ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
+    ser.block_serial = False
 
 def send_buffer(serInt : SerialInterface, buffer, ping=True):
     ser = serInt.serial_conn
@@ -446,7 +452,6 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
         # Wait for and parse response
         success, response = wait_for_response(ser)
 
-        cmd_end(ser)
         if not success:
             raise SerialCommandError(f"Command failed: {response}")
 

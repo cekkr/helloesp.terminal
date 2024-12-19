@@ -36,7 +36,7 @@ class SerialInterface(Gtk.Window):
         self._espressif_path = None
 
         self.is_building = False
-        self.redirect_serial = False
+        
         self.block_serial = False
         self.last_serial_output = None
 
@@ -375,7 +375,6 @@ class SerialInterface(Gtk.Window):
 
     def thread_execute_command(self, command):
         try:
-            self.redirect_serial = True
             success, response = execute_command(self, command)
             if success:
                 self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
@@ -392,7 +391,6 @@ class SerialInterface(Gtk.Window):
                 print(e)
         finally:
             self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
-            self.redirect_serial = False
 
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
@@ -439,8 +437,6 @@ class SerialInterface(Gtk.Window):
 
 
     def upload_file(self, base_name, data):
-        self.redirect_serial = True
-
         try:
             success, msg = write_file(self, base_name, data)
             if success:
@@ -452,8 +448,6 @@ class SerialInterface(Gtk.Window):
                 self.append_terminal(f"Errore upload: {msg}\n")
         except:
             pass
-
-        self.redirect_serial = False
 
     def on_upload_file(self, button):
         """Handler upload file"""
@@ -833,8 +827,10 @@ class SerialInterface(Gtk.Window):
 
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
-
             def send(text):
+                if len(text) > 0:
+                    return
+
                 if text:
                     if not self.redirect_serial:
                         self.append_terminal(text)
@@ -844,8 +840,10 @@ class SerialInterface(Gtk.Window):
                             self.last_serial_output = text.encode()
                         else:
                             self.last_serial_output.extend(text.encode())
+
             try:
-                timeout = time.time() + 0.5  # Timeout di 0.1 secondi
+                next_timeout = 0.25
+                timeout = time.time() + next_timeout  # Timeout di 0.1 secondi
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
                         return
@@ -857,7 +855,7 @@ class SerialInterface(Gtk.Window):
                             self.buffer = ""
 
                     if self.serial_conn.in_waiting:
-                        timeout = time.time() + 0.1  # Reset del timeout
+                        timeout = time.time() + next_timeout  # Reset del timeout
 
                         text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
                         self.buffer += text
@@ -867,10 +865,7 @@ class SerialInterface(Gtk.Window):
                         if len(lines) > 1:
                             self.buffer = lines.pop()
                         else:
-                            if time.time() < timeout:
-                                continue
-                            else:
-                                self.buffer = ""
+                            continue
 
                         for line in lines:
                             send(line)
