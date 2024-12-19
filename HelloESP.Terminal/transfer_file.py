@@ -103,17 +103,19 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         if ifData:
             start_time = time.time()
 
+            data = None
             try:
-                data = None
-
                 if ser.block_serial:
                     data = ser.serial_conn.read(ser.serial_conn.in_waiting)
-                    print("serial read data: ", data)
                 else:
                     data = ser.last_serial_output
                     ser.last_serial_output = None
 
+                print("wait_for_response: serial read data: ", data)
                 line = safe_decode(data) if data is not None else ""
+
+                if '!!TASKMONITOR' in line:
+                    raise Exception("TASKMONITOR data found in wait_for_response")
 
             except Exception as e:
                 print("Debug read exception: ", data)
@@ -122,7 +124,13 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
             thisLine += line
 
         if '\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.5):
-            line = thisLine
+            spl = thisLine.split('\n')
+            line = spl[0]
+
+            if len(spl) > 1:
+                thisLine = '\n'.join(spl[1:])
+            else:
+                thisLine = ""
 
             esp_tag = parse_esp32_log(line)
 
@@ -149,12 +157,6 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
             elif line.startswith("ERROR:"):
                 done()
                 return False, line[6:].strip()
-            else:
-                spl = thisLine.split('\n')
-                if len(spl) > 1:
-                    thisLine = spl[1]
-                else:
-                    thisLine = ""
 
         time.sleep(0.01)
 
@@ -162,10 +164,14 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
     raise SerialCommandError("Timeout waiting for response")
 
 def cmd_start(ser: SerialInterface):
+    print("CMD: SILENCE_ON")
     ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
     ser.serial_conn.flush()
+    ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
+    time.sleep(0.5)
 
 def cmd_end(ser: SerialInterface):
+    print("CMD: SILENCE_OFF")
     ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
     ser.serial_conn.flush()
 
