@@ -36,6 +36,8 @@ class SerialInterface(Gtk.Window):
         self.project_path = "/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
         self._espressif_path = None
 
+        self.main_thread_queue = Queue()
+
         self.is_building = False
         
         self.block_serial = False
@@ -163,9 +165,21 @@ class SerialInterface(Gtk.Window):
         # Test del monitor
         self.monitor_widget.append_text("Tasks monitor")
 
+        #####
+        GLib.timeout_add(50, self.check_main_thread_queue)
+
     ###
     ###
     ###
+
+    def check_main_thread_queue(self):
+        while not self.main_thread_queue.empty():
+            msg_type, value = self.main_thread_queue.get()
+
+            if(msg_type == "terminal_append"):
+                self.terminal_handler.append_terminal(value)
+            elif(msg_type == "monitor_append"):
+                self.monitor_widget.append_text(value)
 
     def init_receiver(self):
         def on_received_normal(text):
@@ -825,6 +839,8 @@ class SerialInterface(Gtk.Window):
         buffer.set_text("")
 
     def read_serial(self):
+        global wfr_thisLine
+
         if self.serial_conn and self.serial_conn.is_open:
             def send(text):
                 if len(text) == 0:
@@ -841,6 +857,12 @@ class SerialInterface(Gtk.Window):
                             self.last_serial_output.extend(text.encode())
 
             try:
+                if not self.block_serial:
+                    if len(wfr_thisLine) > 0:
+                        for line in wfr_thisLine.split('\n'):
+                            self.append_terminal(line)
+                        wfr_thisLine = ''
+
                 next_timeout = 0.25
                 timeout = time.time() + next_timeout  # Timeout di 0.1 secondi
                 while self.serial_conn.in_waiting:
