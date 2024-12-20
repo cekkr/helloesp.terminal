@@ -3,7 +3,7 @@ from array import array
 
 from gi.repository import Gtk, Gdk, Pango
 from gi.repository import GObject
-
+from generalFunctions import *
 
 class TerminalHandler:
     def __init__(self, max_lines=10000):
@@ -442,7 +442,7 @@ class TerminalHandler:
         return self.ansi_pattern.sub(replacer, text)
 
     def append_terminal(self, text):
-        if not text:
+        if not text or not contains_alphanumeric(text):
             return
 
         adj = self.vadj

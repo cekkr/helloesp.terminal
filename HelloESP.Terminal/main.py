@@ -390,9 +390,6 @@ class SerialInterface(Gtk.Window):
             print("thread_execute_command: ", e)
             raise e
 
-        finally:
-            self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
-
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
 

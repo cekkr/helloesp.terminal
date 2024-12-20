@@ -78,31 +78,40 @@ def parse_esp32_log(line: str) -> dict:
 
 ######################################################################
 
-def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=True) -> Tuple[bool, str]:
+wait_for_response_in_use = False
+def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, str]:
+    global wait_for_response_in_use
+
+    while wait_for_response_in_use:
+        time.sleep(0.01)
+
+    wait_for_response_in_use = True
 
     result_queue = Queue()
     thisLine = ""
-    goOn = True
     goOn_read = True
 
     stream_handler = ser.stream_handler
     orig_stream_handler_cbk = stream_handler.default_callback
 
+    if not ser.block_serial:
+        ser.redirect_serial = True
+
     def done():
-        nonlocal goOn
         nonlocal stream_handler
         nonlocal orig_stream_handler_cbk
+        nonlocal thisLine
+        global wait_for_response_in_use
 
-        if ser.block_serial:
-            ser.block_serial = ser.block_serial  # False # wait for cmd_end()
-        ser.redirect_serial = False
+        wait_for_response_in_use = False
+
+        if not ser.block_serial:
+            ser.redirect_serial = False
 
         stream_handler.default_callback = orig_stream_handler_cbk
 
         if len(thisLine) > 0:
             ser.append_terminal(thisLine)
-
-        goOn = False
 
     def on_received_normal(line):
         nonlocal thisLine
@@ -121,7 +130,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
             else:
                 thisLine = ""
 
-            if len(line) == 0:
+            if not contains_alphanumeric(line):
                 continue
 
             print("wait_for_response line: ", line)
@@ -151,7 +160,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
                 res = [False, line[6:].strip()]
             else:
                 #ser.append_terminal(line)
-                ser.terminal_handler.append_terminal(line)
+                ser.terminal_handler.append_terminal(line+'\n')
 
             if res is not None:
                 goOn_read = False
@@ -159,9 +168,8 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
         if res is not None:
             result_queue.put(("res", res))
 
-        time.sleep(0.1)
-
     stream_handler.default_callback = on_received_normal
+    stream_handler.exit_context()
 
     def on_received_monitor(text):
         ser.monitor_widget.append_text(text)
@@ -170,6 +178,8 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
     #stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
 
     def process_serial_data(ser, stream_handler, start_time, result_queue):
+        nonlocal goOn_read
+
         try:
             ifData = ser.serial_conn.in_waiting if ser.block_serial else ser.last_serial_output is not None
             if ifData and goOn_read:
@@ -177,20 +187,23 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
                 data = None
                 try:
                     if ser.block_serial:
+                        ser.serial_conn.flush()
                         data = ser.serial_conn.read(ser.serial_conn.in_waiting)
                     else:
                         data = ser.last_serial_output
                         ser.last_serial_output = None
 
                     #print("wait_for_response: serial read data: ", data)
-                    line = safe_decode(data) if data is not None else ""
+                    text = safe_decode(data) if data is not None else ""
 
-                    if line:
-                        result_queue.put(("process", line))
+                    if not contains_alphanumeric(text):
+                        text = ''
 
-                        start_time = time.time()
-                        result_queue.put(("start_time", start_time))
+                    if len(text) > 0:
+                        result_queue.put(("process", text))
                         print("(received ", len(data), "bytes)")
+
+                    #result_queue.put(("start_time", time.time()))
 
                 except Exception as e:
                     print("wait_for_response exception: ", data)
@@ -198,9 +211,9 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
         except Exception as e:
             result_queue.put(("exception", e))
 
+    stream_handler.exit_context()
     start_time = time.time()
-
-    while goOn and (time.time() - start_time) < timeout or timeout == -1:
+    while (time.time() - start_time) < timeout or timeout == -1:
         if goOn_read:
             # Esegui il corpo del while in un thread
             thread = Thread(target=process_serial_data,
@@ -212,21 +225,23 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=Tr
         while not result_queue.empty():
             msg_type, value = result_queue.get()
             if msg_type == "exception":
-                done()
-                raise value
+                print("process_serial_data exception: ", str(value))
+                #raise value
             elif msg_type == "start_time":
                 print("update start_time: ", value)
                 #start_time = value
             elif msg_type == "res":
                 done()
+                print("end receive result")
                 return value[0], value[1]
             elif msg_type == "process":
                 stream_handler.process_string(value)
 
-        time.sleep(0.1)
+        time.sleep(0.01)
 
-    print("end receive result")
-    return False, "End of cycle"
+    done()
+    print("forced end receive")
+    return False, "Timeout receive cycle"
 
 #####################################################################
 
@@ -239,7 +254,6 @@ def cmd_start(ser: SerialInterface):
 
     ser.block_serial = True
 
-    ser.serial_conn.flush()
     ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
     ser.serial_conn.flush()
 
@@ -253,12 +267,9 @@ def cmd_start(ser: SerialInterface):
 
 def cmd_end(ser: SerialInterface):
     print("CMD: SILENCE_OFF")
-    ser.serial_conn.flush()
     ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
-
+    ser.serial_conn.flush()
     time.sleep(0.1)
-    if ser.serial_conn.in_waiting > 0:
-        ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
 
     ser.stream_handler.exit_context()
     ser.block_serial = False

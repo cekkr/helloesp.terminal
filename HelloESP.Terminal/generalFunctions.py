@@ -35,3 +35,23 @@ def safe_decode(buffer_data, encoding='utf8', strip_ansi=True):
             if (32 <= byte <= 126) or byte in {9, 10, 13}:
                 safe_bytes.append(byte)
         return safe_bytes.decode(encoding, errors='ignore')
+
+
+def contains_alphanumeric(text):
+    """
+    Controlla se una stringa contiene almeno un carattere alfanumerico.
+
+    Args:
+        text (str): La stringa da controllare
+
+    Returns:
+        bool: True se la stringa contiene almeno un carattere alfanumerico,
+              False se contiene solo caratteri speciali
+    """
+    # Controllo se la stringa è vuota
+    if not text:
+        return False
+
+    # Utilizzo any() con isalnum() per verificare se c'è almeno
+    # un carattere alfanumerico
+    return any(char.isalnum() for char in text)

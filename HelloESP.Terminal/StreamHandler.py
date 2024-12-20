@@ -31,6 +31,12 @@ class StreamHandler:
         self._processor_thread = None
         self._executor = ThreadPoolExecutor(max_workers=1)
 
+        self._start_tags = []
+        self._end_tags = []
+
+        self.end_by_start = {}
+        self.start_by_end = {}
+
     def start(self):
         """
         Avvia il thread di processing in background.
@@ -63,6 +69,12 @@ class StreamHandler:
         """
         self.contexts.append((start_tag, end_tag, callback))
 
+        self._start_tags.append(start_tag)
+        self._end_tags.append(end_tag)
+
+        self.end_by_start[start_tag] = end_tag
+        self.start_by_end[end_tag] = start_tag
+
     def _process_buffer(self) -> None:
         """
         Processa il buffer internamente, gestendo i contesti e chiamando
@@ -75,7 +87,10 @@ class StreamHandler:
                 for start_tag, end_tag, callback in self.contexts:
                     if start_tag in self.buffer:
                         # Verifichiamo se c'è anche il tag di fine corrispondente
-                        start_pos = self.buffer.index(start_tag)
+                        start_pos = self.buffer.find(start_tag)
+                        if start_pos < 0:
+                            return
+
                         remaining_buffer = self.buffer[start_pos + len(start_tag):]
 
                         if end_tag in remaining_buffer:
@@ -98,7 +113,7 @@ class StreamHandler:
                 end_tag, callback = self.current_context
                 if end_tag in self.buffer:
                     # Troviamo la posizione del tag di fine
-                    end_pos = self.buffer.index(end_tag)
+                    end_pos = self.buffer.find(end_tag)
 
                     # Processiamo il testo nel contesto con la callback appropriata
                     if end_pos > 0:
@@ -128,11 +143,58 @@ class StreamHandler:
                 if input_data is None:  # Segnale di stop
                     break
                 self.buffer += input_data
-                self.last_input_time = time.time()
+
+                def check_to_process():
+                    toProcess = False
+                    afterProcess = ""
+                    if self.current_context is None:
+                        for tag in self._end_tags:
+                            if tag in self.buffer:
+                                spl = self.buffer.split(tag)
+                                toProcess = True
+                                self.buffer = spl[0] + tag
+                                if len(spl) > 1:
+                                    afterProcess = tag.join(spl[1:])
+                                break
+                    else:
+                        for tag in self._start_tags:
+                            if tag in self.buffer:
+                                spl = self.buffer.split(tag)
+                                toProcess = True
+                                self.buffer = spl[0]
+                                afterProcess = tag
+                                if len(spl) > 1:
+                                    afterProcess += tag.join(spl[1:])
+                                break
+
+                    if toProcess:
+                        self._process_buffer()
+                        self.buffer += afterProcess
+
+                    return toProcess
+
+                update_last_time = False
+                while check_to_process():
+                    update_last_time = True
+
+                if update_last_time:
+                    self.last_input_time = time.time()
 
             except Exception as e:
                 print(f"Errore nel thread di processing: {e}")
                 raise e
+
+    def has_start_tag(self, text):
+        for tag in self._start_tags:
+            if tag in text:
+                return tag, text.find(tag)
+        return None, -1
+
+    def has_end_tag(self, text):
+        for tag in self._end_tags:
+            if tag in text:
+                return tag, text.find(tag)
+        return None, -1
 
     def process_string(self, input_string: str) -> None:
         """
@@ -144,7 +206,21 @@ class StreamHandler:
         if self._processor_thread is None:
             self.start()
 
-        self.input_queue.put(input_string.replace('\r', ''))
+        input_string = input_string.replace('\r', '')
+
+        # Ignore end context of un-opened context
+        if self.current_context is None:
+            end_tag, end_pos = self.has_end_tag(input_string)
+            if end_tag is not None:
+                start_tag = self.start_by_end[end_tag]
+                start_pos = input_string.find(start_tag)
+
+                if start_pos < 0 or start_pos > end_pos:
+                    spl = input_string.split(end_tag)
+                    input_string = end_tag.join(spl[1:])
+        #todo: else: an open tag before the close tag
+
+        self.input_queue.put(input_string)
 
     async def process_string_async(self, input_string: str) -> None:
         """
