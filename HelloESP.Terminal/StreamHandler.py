@@ -82,7 +82,7 @@ class StreamHandler:
         Processa il buffer internamente, gestendo i contesti e chiamando
         le appropriate callback.
         """
-        while self.buffer and not self._stop_event.is_set():
+        while len(self.buffer) > 0:
             theres_tag = False
             if self.current_context is None:
                 # Cerchiamo il prossimo tag di inizio
@@ -92,14 +92,21 @@ class StreamHandler:
                     start_pos = self.buffer.find(start_tag)
                     if start_pos >= 0:
                         theres_tag = True
-                        self.default_callback(self.buffer[:start_pos])
+                        res = self.buffer[:start_pos]
+                        if contains_alphanumeric(res):
+                            self.default_callback(res+'\n')
+
                         self.buffer = self.buffer[start_pos + len(start_tag):]
                         self.current_context = (end_tag, callback)
 
                     if end_tag in remaining_buffer:
                         theres_tag = True
                         end_pos = self.buffer.find(end_tag)
-                        self.current_context[1](self.buffer[:end_pos])
+
+                        res = self.buffer[:end_pos]
+                        if contains_alphanumeric(res):
+                            self.current_context[1](res)
+
                         self.buffer = self.buffer[end_pos + len(end_tag):]
                         self.current_context = None
             else:
@@ -113,7 +120,9 @@ class StreamHandler:
 
                     # Processiamo il testo nel contesto con la callback appropriata
                     if end_pos >= 0:
-                        callback(self.buffer[:end_pos])
+                        res = self.buffer[:end_pos]
+                        if contains_alphanumeric(res):
+                            callback(res)
 
                     # Rimuoviamo il testo processato e il tag di fine
                     self.buffer = self.buffer[end_pos + len(end_tag):]
@@ -126,7 +135,7 @@ class StreamHandler:
                     cbk = self.current_context[1] if self.current_context is not None else self.default_callback
                     for line in spl:
                         if contains_alphanumeric(line):
-                            cbk(line)
+                            cbk(line+"\n")
                 else:
                     break
 
@@ -144,10 +153,11 @@ class StreamHandler:
                     continue
 
                 # Attendiamo nuovo input o timeout
-                input_data = self.input_queue.get(timeout=self.buffer_timeout)
-                if input_data is None:  # Segnale di stop
-                    break
-                self.buffer += input_data
+                while not self.input_queue.empty():
+                    input_data = self.input_queue.get(timeout=self.buffer_timeout)
+                    if input_data is None:  # Segnale di stop
+                        continue
+                    self.buffer += input_data
 
                 def check_to_process():
                     toProcess = False
@@ -214,7 +224,7 @@ class StreamHandler:
         input_string = input_string.replace('\r', '')
 
         # Ignore end context of un-opened context
-        if self.current_context is None:
+        if self.current_context is None and False: # useless (and stupid) operation
             end_tag, end_pos = self.has_end_tag(input_string)
             if end_tag is not None:
                 start_tag = self.start_by_end[end_tag]

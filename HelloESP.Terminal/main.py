@@ -189,10 +189,10 @@ class SerialInterface(Gtk.Window):
     def init_receiver(self):
         def on_received_normal(text):
             self.update_tracing(text)
-            self.terminal_handler.append_terminal(text + '\n')
+            self.main_thread_queue.put(("terminal_append", text))
 
         def on_received_monitor(text):
-            self.monitor_widget.append_text(text)
+            self.main_thread_queue.put(("monitor_append", text))
 
         self.stream_handler = StreamHandler(on_received_normal)
         self.stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
@@ -848,7 +848,7 @@ class SerialInterface(Gtk.Window):
 
         if self.serial_conn and self.serial_conn.is_open:
             def send(text):
-                if len(text) == 0:
+                if not contains_alphanumeric(text):
                     return
 
                 if text:
@@ -862,40 +862,18 @@ class SerialInterface(Gtk.Window):
                             self.last_serial_output.extend(text.encode())
 
             try:
-                if not self.block_serial:
-                    if len(wfr_thisLine) > 0:
-                        for line in wfr_thisLine.split('\n'):
-                            self.append_terminal(line)
-                        wfr_thisLine = ''
-
-                next_timeout = 0.25
-                timeout = time.time() + next_timeout  # Timeout di 0.1 secondi
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
-                        return
+                        time.sleep(0.1)
+                        continue
+                    else:
+                        if len(wfr_thisLine) > 0:
+                            for line in wfr_thisLine.split('\n'):
+                                self.append_terminal(line)
+                            wfr_thisLine = ''
 
-                    if time.time() > timeout:
-                        # Se c'è del testo nel buffer lo processiamo prima di uscire
-                        if len(self.buffer) > 0:
-                            send(self.buffer)
-                            self.buffer = ""
-
-                    if self.serial_conn.in_waiting:
-                        timeout = time.time() + next_timeout  # Reset del timeout
-
-                        text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
-                        #print("read_serial: ", text)
-                        self.buffer += text
-
-                        lines = self.buffer.split('\n')
-
-                        if len(lines) > 1:
-                            self.buffer = lines.pop()
-                        else:
-                            continue
-
-                        for line in lines:
-                            send(line)
+                    text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
+                    send(text)
 
             except serial.SerialException as e:
                 self.append_terminal(f"Errore di lettura: {str(e)}\n")
@@ -905,9 +883,8 @@ class SerialInterface(Gtk.Window):
                 return False
             except Exception as e:
                 print("read_serial Exception")
-                self.append_terminal(self.buffer)
-                raise e
-                return False
+                #self.append_terminal(self.buffer)
+                #raise e
 
             return True
         return False

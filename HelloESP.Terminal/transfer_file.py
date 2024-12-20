@@ -117,10 +117,12 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         nonlocal goOn_read
         nonlocal result_queue
 
+        print("wait_for_response on_received_normal (",len(line),") bytes")
+
         wfr_thisLine += line
 
         res = None
-        while ('\n' in wfr_thisLine or (len(wfr_thisLine) > 0 and (time.time() - start_time) > 0.5)) and not (res is not None and len(wfr_thisLine) == 0):
+        while '\n' in wfr_thisLine and res is None:
             spl = wfr_thisLine.split('\n')
             line = spl[0]
 
@@ -218,7 +220,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         except Exception as e:
             result_queue.put(("exception", e))
 
-    timeout = -1
+    #timeout = -1
     stream_handler.exit_context()
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
@@ -243,6 +245,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 print("end receive result")
                 return value[0], value[1]
             elif msg_type == "process":
+                print("processing ", len(value), " bytes")
                 stream_handler.process_string(value)
 
         time.sleep(0.05)
