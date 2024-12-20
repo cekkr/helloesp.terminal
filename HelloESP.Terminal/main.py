@@ -842,6 +842,7 @@ class SerialInterface(Gtk.Window):
     def on_reset_clicked(self, button):
         buffer = self.terminal.get_buffer()
         buffer.set_text("")
+        self.stream_handler.clear()
 
     def read_serial(self):
         global wfr_thisLine
