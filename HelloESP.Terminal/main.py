@@ -173,13 +173,18 @@ class SerialInterface(Gtk.Window):
     ###
 
     def check_main_thread_queue(self):
-        while not self.main_thread_queue.empty():
-            msg_type, value = self.main_thread_queue.get()
+        try:
+            while not self.main_thread_queue.empty():
+                msg_type, value = self.main_thread_queue.get()
 
-            if(msg_type == "terminal_append"):
-                self.terminal_handler.append_terminal(value)
-            elif(msg_type == "monitor_append"):
-                self.monitor_widget.append_text(value)
+                if(msg_type == "terminal_append"):
+                    self.terminal_handler.append_terminal(value)
+                elif(msg_type == "monitor_append"):
+                    self.monitor_widget.append_text(value)
+        except Exception as e:
+            print("check_main_thread_queue: {e}")
+
+        return True
 
     def init_receiver(self):
         def on_received_normal(text):
@@ -393,9 +398,9 @@ class SerialInterface(Gtk.Window):
         try:
             success, response = execute_command(self, command)
             if success:
-                self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
+                self.main_thread_queue.put(("append_terminal", f"Comando eseguito: {command}\nRisposta: {response}\n"))
             else:
-                self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
+                self.main_thread_queue.put(("append_terminal", f"Errore nell'esecuzione del comando: {response}\n"))
         except Exception as e:
             self.append_terminal(f"Execute command error: {str(e)}\n")
             if __debug__:

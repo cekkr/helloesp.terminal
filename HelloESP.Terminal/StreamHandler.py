@@ -5,6 +5,8 @@ import threading
 from queue import Queue
 from concurrent.futures import ThreadPoolExecutor
 
+from generalFunctions import contains_alphanumeric
+
 
 class StreamHandler:
     def __init__(self, default_callback: Optional[Callable] = None):
@@ -81,50 +83,53 @@ class StreamHandler:
         le appropriate callback.
         """
         while self.buffer and not self._stop_event.is_set():
+            theres_tag = False
             if self.current_context is None:
                 # Cerchiamo il prossimo tag di inizio
-                found_start = False
                 for start_tag, end_tag, callback in self.contexts:
-                    if start_tag in self.buffer:
-                        # Verifichiamo se c'è anche il tag di fine corrispondente
-                        start_pos = self.buffer.find(start_tag)
-                        if start_pos < 0:
-                            return
+                    remaining_buffer = self.buffer
 
-                        remaining_buffer = self.buffer[start_pos + len(start_tag):]
+                    start_pos = self.buffer.find(start_tag)
+                    if start_pos >= 0:
+                        theres_tag = True
+                        self.default_callback(self.buffer[:start_pos])
+                        self.buffer = self.buffer[start_pos + len(start_tag):]
+                        self.current_context = (end_tag, callback)
 
-                        if end_tag in remaining_buffer:
-                            # Processiamo il testo prima del tag con la callback predefinita
-                            if start_pos > 0:
-                                self.default_callback(self.buffer[:start_pos])
-
-                            # Rimuoviamo il testo processato e il tag di inizio
-                            self.buffer = self.buffer[start_pos + len(start_tag):]
-                            self.current_context = (end_tag, callback)
-                            found_start = True
-                            break
-
-                if not found_start:
-                    # Se non troviamo una coppia completa di tag, manteniamo il buffer
-                    break
-
+                    if end_tag in remaining_buffer:
+                        theres_tag = True
+                        end_pos = self.buffer.find(end_tag)
+                        self.current_context[1](self.buffer[:end_pos])
+                        self.buffer = self.buffer[end_pos + len(end_tag):]
+                        self.current_context = None
             else:
                 # Siamo all'interno di un contesto, cerchiamo il tag di fine
                 end_tag, callback = self.current_context
                 if end_tag in self.buffer:
+                    theres_tag = True
+
                     # Troviamo la posizione del tag di fine
                     end_pos = self.buffer.find(end_tag)
 
                     # Processiamo il testo nel contesto con la callback appropriata
-                    if end_pos > 0:
+                    if end_pos >= 0:
                         callback(self.buffer[:end_pos])
 
                     # Rimuoviamo il testo processato e il tag di fine
                     self.buffer = self.buffer[end_pos + len(end_tag):]
                     self.current_context = None
+
+            if not theres_tag:
+                if '\n' in self.buffer:
+                    spl = self.buffer.split('\n')
+                    self.buffer = spl.pop()
+                    cbk = self.current_context[1] if self.current_context is not None else self.default_callback
+                    for line in spl:
+                        if contains_alphanumeric(line):
+                            cbk(line)
                 else:
-                    # Se non troviamo il tag di fine, manteniamo il buffer
                     break
+
 
     def _process_loop(self):
         """

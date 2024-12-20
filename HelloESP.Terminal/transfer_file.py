@@ -80,11 +80,12 @@ def parse_esp32_log(line: str) -> dict:
 
 wait_for_response_in_use = False
 wfr_thisLine = ""
-def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, str]:
+def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, str]:
     global wait_for_response_in_use
     global wfr_thisLine
 
     while wait_for_response_in_use:
+        print("wait_for_response in use elsewhere")
         time.sleep(0.01)
 
     wait_for_response_in_use = True
@@ -102,7 +103,6 @@ def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, 
     def done():
         nonlocal stream_handler
         nonlocal orig_stream_handler_cbk
-        global wfr_thisLine
         global wait_for_response_in_use
 
         wait_for_response_in_use = False
@@ -173,6 +173,8 @@ def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, 
         if res is not None:
             result_queue.put(("res", res))
 
+    on_received_normal("")
+
     stream_handler.default_callback = on_received_normal
     #stream_handler.exit_context()
 
@@ -192,7 +194,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, 
                 data = None
                 try:
                     if ser.block_serial:
-                        ser.serial_conn.flush()
+                        #ser.serial_conn.flush()
                         data = ser.serial_conn.read(ser.serial_conn.in_waiting)
                     else:
                         data = ser.last_serial_output
@@ -216,6 +218,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, 
         except Exception as e:
             result_queue.put(("exception", e))
 
+    timeout = -1
     stream_handler.exit_context()
     start_time = time.time()
     while (time.time() - start_time) < timeout or timeout == -1:
@@ -242,7 +245,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 3) -> Tuple[bool, 
             elif msg_type == "process":
                 stream_handler.process_string(value)
 
-        time.sleep(0.01)
+        time.sleep(0.05)
 
         if not wait_for_response_in_use:
             break
@@ -261,13 +264,11 @@ def cmd_start(ser: SerialInterface):
     print("CMD: SILENCE_ON")
     ser.block_serial = True
     ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
-    ser.serial_conn.flush()
     time.sleep(0.1)
 
 def cmd_end(ser: SerialInterface):
     print("CMD: SILENCE_OFF")
     ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
-    ser.serial_conn.flush()
     time.sleep(0.1)
 
     if ser.block_serial:
