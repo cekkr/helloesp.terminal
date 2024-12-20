@@ -1,20 +1,31 @@
 from gi.overrides.Gtk import Gtk
 
+from TerminalHandler import TerminalHandler
+
 
 class MonitorWidget:
     def __init__(self, parent_window):
         # Main container
         self.box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
 
-        # Create the monitor view
-        self.monitor_view = Gtk.TextView()
-        self.monitor_view.set_editable(False)
-        self.monitor_view.set_cursor_visible(False)
+        self.use_terminal = True
 
-        # Set up scrolled window for the monitor
-        self.scrolled_window = Gtk.ScrolledWindow()
-        self.scrolled_window.set_size_request(300, 200)  # Width and height
-        self.scrolled_window.add(self.monitor_view)
+        if self.use_terminal:
+            # Create the monitor view
+            self.terminal_handler = TerminalHandler()
+            self.terminal_box = self.terminal_handler.get_widget()
+            self.monitor_view = self.terminal_handler.terminal
+
+            self.buffer = self.terminal_handler.terminal_buffer
+        else:
+            self.monitor_view = Gtk.TextView()
+            self.monitor_view.set_editable(False)
+            self.monitor_view.set_cursor_visible(False)
+
+            # Set up scrolled window for the monitor
+            self.scrolled_window = Gtk.ScrolledWindow()
+            self.scrolled_window.set_size_request(300, 200)  # Width and height
+            self.scrolled_window.add(self.monitor_view)
 
         # Add custom styling
         css_provider = Gtk.CssProvider()
@@ -35,12 +46,15 @@ class MonitorWidget:
         style_context = self.monitor_view.get_style_context()
         style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
 
-        # Create the buffer for text
-        self.buffer = self.monitor_view.get_buffer()
-        self.buffer.set_text("Tasks monitor\n")
+        if self.use_terminal:
+            self.box.pack_start(self.terminal_handler.get_widget(), True, True, 0)
+        else:
+            # Create the buffer for text
+            self.buffer = self.monitor_view.get_buffer()
+            self.buffer.set_text("Tasks monitor\n")
 
-        # Add to box
-        self.box.pack_start(self.scrolled_window, True, True, 0)
+            # Add to box
+            self.box.pack_start(self.scrolled_window, True, True, 0)
 
         # Toggle button setup
         self.toggle_button = Gtk.ToggleButton(label="Monitor")
@@ -65,9 +79,6 @@ class MonitorWidget:
         """Update the monitor text"""
         self.buffer.set_text(text)
 
-    def clear(self):
-        self.buffer.set_text("")
-
     def append_text(self, text):
         """Append text to the monitor"""
 
@@ -75,11 +86,14 @@ class MonitorWidget:
             self.clear()
             text = text.replace('!!clear!!', '')
 
-        end_iter = self.buffer.get_end_iter()
-        self.buffer.insert(end_iter, text + "\n")
-        # Scroll to the bottom
-        mark = self.buffer.create_mark(None, end_iter, False)
-        self.monitor_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+        if self.terminal_handler:
+            self.terminal_handler.append_terminal(text+"\n")
+        else:
+            end_iter = self.buffer.get_end_iter()
+            self.buffer.insert(end_iter, text + "\n")
+            # Scroll to the bottom
+            mark = self.buffer.create_mark(None, end_iter, False)
+            self.monitor_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
 
     def clear(self):
         """Clear all text from the monitor"""

@@ -4,6 +4,9 @@ from typing import Optional, Tuple, List
 import serial
 import hashlib
 from main import *
+from threading import Thread
+from queue import Queue
+import time
 
 from generalFunctions import *
 
@@ -73,60 +76,43 @@ def parse_esp32_log(line: str) -> dict:
 ####
 ####
 
-def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, str]:
-    """
-    Wait for and parse response from device, handling info/warning/error logs.
+######################################################################
 
-    Args:
-        ser: Serial connection object
-        timeout: Maximum time to wait for response in seconds
+def wait_for_response(ser : SerialInterface, timeout: float = 5, stopAtResult=True) -> Tuple[bool, str]:
 
-    Returns:
-        Tuple of (success, message)
-    """
-
-    ser.block_serial = True
-    ser.redirect_serial = not ser.block_serial
-
+    result_queue = Queue()
     thisLine = ""
+    goOn = True
+    goOn_read = True
+
+    stream_handler = ser.stream_handler
+    orig_stream_handler_cbk = stream_handler.default_callback
 
     def done():
+        nonlocal goOn
+        nonlocal stream_handler
+        nonlocal orig_stream_handler_cbk
+
         if ser.block_serial:
-            ser.block_serial = ser.block_serial # False # wait for cmd_end()
+            ser.block_serial = ser.block_serial  # False # wait for cmd_end()
         ser.redirect_serial = False
+
+        stream_handler.default_callback = orig_stream_handler_cbk
 
         if len(thisLine) > 0:
             ser.append_terminal(thisLine)
 
-    start_time = time.time()
-    while (time.time() - start_time) < timeout or timeout == -1:
+        goOn = False
 
-        ifData = ser.serial_conn.in_waiting if ser.block_serial else ser.last_serial_output is not None
-        if ifData:
-            start_time = time.time()
+    def on_received_normal(line):
+        nonlocal thisLine
+        nonlocal goOn_read
+        nonlocal result_queue
 
-            data = None
-            try:
-                if ser.block_serial:
-                    data = ser.serial_conn.read(ser.serial_conn.in_waiting)
-                else:
-                    data = ser.last_serial_output
-                    ser.last_serial_output = None
+        thisLine += line
 
-                print("wait_for_response: serial read data: ", data)
-                line = safe_decode(data) if data is not None else ""
-
-                if '!!TASKMONITOR' in line:
-                    raise Exception("TASKMONITOR data found")
-
-            except Exception as e:
-                print("wait_for_response exception: ", data)
-                done()
-                raise e
-
-            thisLine += line
-
-        if '\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.5):
+        res = None
+        while ('\n' in thisLine or (len(thisLine) > 0 and (time.time() - start_time) > 0.5)) and not (res is not None and len(thisLine) == 0):
             spl = thisLine.split('\n')
             line = spl[0]
 
@@ -134,6 +120,11 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 thisLine = '\n'.join(spl[1:])
             else:
                 thisLine = ""
+
+            if len(line) == 0:
+                continue
+
+            print("wait_for_response line: ", line)
 
             esp_tag = parse_esp32_log(line)
 
@@ -155,31 +146,125 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
             # Process actual responses
             if line.startswith("OK:"):
-                done()
-                return True, line[3:].strip()
+                res = [True, line[3:].strip()]
             elif line.startswith("ERROR:"):
+                res = [False, line[6:].strip()]
+            else:
+                #ser.append_terminal(line)
+                ser.terminal_handler.append_terminal(line)
+
+            if res is not None:
+                goOn_read = False
+
+        if res is not None:
+            result_queue.put(("res", res))
+
+        time.sleep(0.1)
+
+    stream_handler.default_callback = on_received_normal
+
+    def on_received_monitor(text):
+        ser.monitor_widget.append_text(text)
+
+    #stream_handler = StreamHandler(on_received_normal)
+    #stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
+
+    def process_serial_data(ser, stream_handler, start_time, result_queue):
+        try:
+            ifData = ser.serial_conn.in_waiting if ser.block_serial else ser.last_serial_output is not None
+            if ifData and goOn_read:
+
+                data = None
+                try:
+                    if ser.block_serial:
+                        data = ser.serial_conn.read(ser.serial_conn.in_waiting)
+                    else:
+                        data = ser.last_serial_output
+                        ser.last_serial_output = None
+
+                    #print("wait_for_response: serial read data: ", data)
+                    line = safe_decode(data) if data is not None else ""
+
+                    if line:
+                        result_queue.put(("process", line))
+
+                        start_time = time.time()
+                        result_queue.put(("start_time", start_time))
+                        print("(received ", len(data), "bytes)")
+
+                except Exception as e:
+                    print("wait_for_response exception: ", data)
+                    result_queue.put(("exception", e))
+        except Exception as e:
+            result_queue.put(("exception", e))
+
+    start_time = time.time()
+
+    while goOn and (time.time() - start_time) < timeout or timeout == -1:
+        if goOn_read:
+            # Esegui il corpo del while in un thread
+            thread = Thread(target=process_serial_data,
+                            args=(ser, stream_handler, start_time, result_queue))
+            thread.start()
+            thread.join()  # Aspetta che il thread finisca
+
+        # Controlla i risultati dal thread
+        while not result_queue.empty():
+            msg_type, value = result_queue.get()
+            if msg_type == "exception":
                 done()
-                return False, line[6:].strip()
+                raise value
+            elif msg_type == "start_time":
+                print("update start_time: ", value)
+                #start_time = value
+            elif msg_type == "res":
+                done()
+                return value[0], value[1]
+            elif msg_type == "process":
+                stream_handler.process_string(value)
 
-        time.sleep(0.01)
+        time.sleep(0.1)
 
-    done()
-    raise SerialCommandError("Timeout waiting for response")
+    print("end receive result")
+    return False, "End of cycle"
+
+#####################################################################
+
+##############
+##############
+##############
 
 def cmd_start(ser: SerialInterface):
     print("CMD: SILENCE_ON")
+
+    ser.block_serial = True
+
     ser.serial_conn.flush()
     ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
     ser.serial_conn.flush()
+
     time.sleep(0.1)
-    ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
-    ser.block_serial = True
+    while ser.serial_conn.in_waiting > 0:
+        print("flushing cmd_start")
+        ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
+
+    ser.stream_handler.exit_context()
+
 
 def cmd_end(ser: SerialInterface):
     print("CMD: SILENCE_OFF")
     ser.serial_conn.flush()
     ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
+
+    time.sleep(0.1)
+    if ser.serial_conn.in_waiting > 0:
+        ser.serial_conn.read(ser.serial_conn.in_waiting) # trash last data
+
+    ser.stream_handler.exit_context()
     ser.block_serial = False
+
+##############
+##############
 
 def send_buffer(serInt : SerialInterface, buffer, ping=True):
     ser = serInt.serial_conn
@@ -453,6 +538,7 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
         success, response = wait_for_response(ser)
 
         if not success:
+            cmd_end(ser)
             raise SerialCommandError(f"Command failed: {response}")
 
         # Parse response - assuming similar format to LIST_FILES
@@ -463,7 +549,8 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
                 raise SerialCommandError(f"Invalid response format: {response}")
             return True, split[1]
         else: # simple response output
-            print(response)
+            print("execute_command response: " + response)
+            cmd_end(ser)
             return True, response
 
     except serial.SerialException as e:
@@ -471,7 +558,8 @@ def execute_command(ser : SerialInterface, command: str) -> Tuple[bool, str]:
         raise SerialCommandError(f"Serial communication error: {str(e)}")
     except Exception as e:
         cmd_end(ser)
-        raise SerialCommandError(f"Error executing command: {str(e)}")
+        print(f"Error executing command: {str(e)}")
+        raise e
 
 def delete_file(ser : SerialInterface, filename: str) -> Tuple[bool, str]:
     """

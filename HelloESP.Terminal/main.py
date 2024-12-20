@@ -8,6 +8,7 @@ import gi
 
 from MonitorWidget import MonitorWidget
 from StreamHandler import StreamHandler
+#from transfer_file import SerialCommandError
 
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
@@ -38,6 +39,7 @@ class SerialInterface(Gtk.Window):
         self.is_building = False
         
         self.block_serial = False
+        self.redirect_serial = False
         self.last_serial_output = None
 
         self.init_receiver()
@@ -380,15 +382,14 @@ class SerialInterface(Gtk.Window):
                 self.append_terminal(f"Comando eseguito: {command}\nRisposta: {response}\n")
             else:
                 self.append_terminal(f"Errore nell'esecuzione del comando: {response}\n")
-        except SerialCommandError as e:
-            self.append_terminal(f"Errore seriale: {str(e)}\n")
-            if __debug__:
-                # raise e
-                print(e)
         except Exception as e:
+            self.append_terminal(f"Execute command error: {str(e)}\n")
             if __debug__:
                 # raise e
-                print(e)
+                pass
+            print("thread_execute_command: ", e)
+            raise e
+
         finally:
             self.cmd_entry.set_text("")  # Pulisce il campo dopo l'esecuzione
 
@@ -404,6 +405,7 @@ class SerialInterface(Gtk.Window):
             return
 
         if command:
+            self.cmd_entry.set_text("")
             threading.Thread(target=self.thread_execute_command, args=(command,)).start()
 
     def refresh_file_list(self):
@@ -828,7 +830,7 @@ class SerialInterface(Gtk.Window):
     def read_serial(self):
         if self.serial_conn and self.serial_conn.is_open:
             def send(text):
-                if len(text) > 0:
+                if len(text) == 0:
                     return
 
                 if text:
@@ -858,6 +860,7 @@ class SerialInterface(Gtk.Window):
                         timeout = time.time() + next_timeout  # Reset del timeout
 
                         text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
+                        #print("read_serial: ", text)
                         self.buffer += text
 
                         lines = self.buffer.split('\n')
@@ -877,7 +880,9 @@ class SerialInterface(Gtk.Window):
                 self.connect_button.set_label("Connetti")
                 return False
             except Exception as e:
+                print("read_serial Exception")
                 self.append_terminal(self.buffer)
+                raise e
                 return False
 
             return True
