@@ -105,7 +105,8 @@ class StreamHandler:
 
                         res = self.buffer[:end_pos]
                         if contains_alphanumeric(res):
-                            self.current_context[1](res)
+                            end_tag, cbk = self.current_context
+                            cbk(res)
 
                         self.buffer = self.buffer[end_pos + len(end_tag):]
                         self.current_context = None
@@ -139,6 +140,10 @@ class StreamHandler:
                 else:
                     break
 
+
+    def clear(self):
+        self.current_context = None
+        self.buffer = ''
 
     def _process_loop(self):
         """
