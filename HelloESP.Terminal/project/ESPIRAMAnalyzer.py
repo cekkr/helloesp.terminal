@@ -34,10 +34,16 @@ class ESPIRAMAnalyzer:
 
     def _get_source_info(self, elf_file: str, addresses: List[str]) -> List[SourceLineInfo]:
         """Get source file and line information for a list of addresses."""
+
+        elf_path = self.build_dir / elf_file
+
+        if not elf_path.exists():
+            return []
+
         cmd = [
             self.idf_run,
             self.addr2line_path,
-            '-e', str(self.build_dir / elf_file),
+            '-e', str(elf_path),
             '-f',  # Show function names
             '-C',  # Demangle names
             *addresses
