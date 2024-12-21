@@ -812,7 +812,7 @@ class SerialInterface(Gtk.Window):
                 port = self.port_combo.get_active_text()
                 if port:
                     baudrate = 115200
-                    baudrate = 921600
+                    baudrate = 230400
 
                     self.serial_conn = serial.Serial(port, baudrate, timeout=0)
                     self.connect_button.set_label("Disconnetti")
