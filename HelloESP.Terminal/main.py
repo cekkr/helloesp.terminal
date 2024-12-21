@@ -181,8 +181,11 @@ class SerialInterface(Gtk.Window):
                     self.terminal_handler.append_terminal(value)
                 elif(msg_type == "monitor_append"):
                     self.monitor_widget.append_text(value)
+                else:
+                    print("msg_type not found: " , msg_type)
+
         except Exception as e:
-            print("check_main_thread_queue: {e}")
+            print("check_main_thread_queue: ", str(e))
 
         return True
 
