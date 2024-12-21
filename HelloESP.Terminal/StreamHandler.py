@@ -133,7 +133,8 @@ class StreamHandler:
                 if '\n' in self.buffer:
                     spl = self.buffer.split('\n')
                     self.buffer = spl.pop()
-                    cbk = self.current_context[1] if self.current_context is not None else self.default_callback
+                    curCtxEndTag, curCtxCbk = self.current_context if self.current_context is not None else (None, None)
+                    cbk = curCtxCbk if self.current_context is not None else self.default_callback
                     for line in spl:
                         if contains_alphanumeric(line):
                             cbk(line+"\n")
@@ -155,6 +156,7 @@ class StreamHandler:
                     # Timeout raggiunto, processiamo il buffer
                     if time.time() - self.last_input_time >= self.buffer_timeout:
                         self._process_buffer()
+                        self.last_input_time = time.time()
                     continue
 
                 # Attendiamo nuovo input o timeout
