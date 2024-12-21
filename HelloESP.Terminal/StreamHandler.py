@@ -141,6 +141,14 @@ class StreamHandler:
                 else:
                     break
 
+    def _flush(self):
+        if self.current_context is None:
+            self.default_callback(self.buffer)
+            self.buffer = ''
+        else:
+            end_tag, cbk = self.current_context
+            cbk(self.buffer)
+            self.buffer = ''
 
     def clear(self):
         self.current_context = None
@@ -151,11 +159,17 @@ class StreamHandler:
         Loop principale del thread di processing.
         """
         while not self._stop_event.is_set():
+            time.sleep(0.1)
+
             try:
                 if self.input_queue.empty():
                     # Timeout raggiunto, processiamo il buffer
                     if time.time() - self.last_input_time >= self.buffer_timeout:
                         self._process_buffer()
+
+                        if len(self.buffer) > 512:
+                            self._flush()
+
                         self.last_input_time = time.time()
                     continue
 
