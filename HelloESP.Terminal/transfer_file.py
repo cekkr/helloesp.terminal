@@ -602,9 +602,11 @@ def delete_file(ser : SerialInterface, filename: str) -> Tuple[bool, str]:
         command = f"$$$DELETE_FILE$$${filename}\n"
         send_buffer(ser, command)
 
-        resp = wait_for_response(ser)
+        ok, resp = wait_for_response(ser)
 
         cmd_end(ser)
+
+        return ok, resp
 
     except (serial.SerialException, FileValidationError) as e:
         cmd_end(ser)
@@ -612,4 +614,3 @@ def delete_file(ser : SerialInterface, filename: str) -> Tuple[bool, str]:
     except Exception as e:
         cmd_end(ser)
         raise SerialCommandError(f"Error deleting file: {str(e)}")
-
