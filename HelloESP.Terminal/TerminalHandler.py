@@ -638,7 +638,7 @@ class TerminalHandler:
         css = """
         button {
             background-color: rgba(46, 52, 54, 0.8);  /* Slightly transparent dark gray */
-            color: white;
+            color: gray;
             border: 1px solid #555;
             padding: 5px 10px;
             border-radius: 4px;

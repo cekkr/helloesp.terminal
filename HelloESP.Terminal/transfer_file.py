@@ -205,8 +205,15 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                         data = ser.last_serial_output
                         ser.last_serial_output = None
 
-                    #print("wait_for_response: serial read data: ", data)
-                    text = safe_decode(data) if data is not None else ""
+                    # print("wait_for_response: serial read data: ", data)
+
+                    text = ''
+
+                    if data is not None:
+                        try:
+                            text = data.decode('utf8')
+                        except:
+                            text = safe_decode(data)
 
                     if not contains_alphanumeric(text):
                         text = ''
