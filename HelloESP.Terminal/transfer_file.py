@@ -297,7 +297,10 @@ def send_buffer(serInt : SerialInterface, buffer, ping=True):
         else:
             print("PONG!")
 
-    ser.write(buffer.encode('utf8'))
+    if type(buffer) is str:
+        buffer = buffer.encode('utf8')
+
+    ser.write(buffer)
     ser.flush()
 
 ###
