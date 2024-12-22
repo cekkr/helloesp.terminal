@@ -84,6 +84,9 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
     global wait_for_response_in_use
     global wfr_thisLine
 
+    if "SerialInterface" not in str(type(ser)):
+        return False, ("ser is not SerialInterface but " + str(type(ser)))
+
     while wait_for_response_in_use:
         print("wait_for_response in use elsewhere")
         time.sleep(0.01)
@@ -314,11 +317,11 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
             return False, f"Invalid file size (max {MAX_FILE_SIZE} bytes)"
 
         file_hash = hashlib.md5(data).hexdigest()
-        if not check_existing_file(ser, filename, len(data)):
+        if not check_existing_file(serInterface, filename, len(data)):
             return False, "File exists with same size"
 
         # Inizia trasferimento
-        success, response = send_write_command(ser, filename, len(data), file_hash)
+        success, response = send_write_command(serInterface, filename, len(data), file_hash)
         if not success:
             return False, "Not ready for write: " + response
 
@@ -345,7 +348,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
             # Invia dimensione chunk e hash
             command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
-            send_buffer(ser, command, ping=False)
+            send_buffer(serInterface, command, ping=False)
 
             success, message = wait_for_response(serInterface)
             if not success:
@@ -358,7 +361,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
             ser.flush()
 
             # Verifica ricezione
-            success, message = wait_for_response(ser)
+            success, message = wait_for_response(serInterface)
             if not success:
                 return False, f"Chunk verification failed: {message}"
             else:
@@ -366,7 +369,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
         # Verifica finale
         command = "$$$VERIFY_FILE$$$\n"
-        send_buffer(ser, command.encode('utf8'))
+        send_buffer(serInterface, command.encode('utf8'))
 
         resp = wait_for_response(serInterface)
         cmd_end(serInterface)
@@ -374,6 +377,7 @@ def write_file(serInterface: SerialInterface, filename: str, data: bytes) -> Tup
 
     except Exception as e:
         cmd_end(serInterface)
+        print_err("Transfer error: ", e)
         return False, f"Transfer error: {str(e)}"
 
 

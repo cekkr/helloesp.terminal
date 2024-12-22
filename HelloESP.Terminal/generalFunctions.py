@@ -1,5 +1,5 @@
 import re
-
+import traceback
 
 def safe_decode(buffer_data, encoding='utf8', strip_ansi=True):
     """
@@ -55,3 +55,7 @@ def contains_alphanumeric(text):
     # Utilizzo any() con isalnum() per verificare se c'è almeno
     # un carattere alfanumerico
     return any(char.isalnum() for char in text)
+
+def print_err(explain, e):
+    print("Error: ", explain, e)
+    print(traceback.format_exc())
