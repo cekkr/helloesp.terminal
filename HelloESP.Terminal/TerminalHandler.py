@@ -1,9 +1,16 @@
+import sys
+from pathlib import Path
+
+# Aggiungi la directory corrente al path
+sys.path.append(str(Path(__file__).parent))
+
 import re
 from array import array
 
 from gi.repository import Gtk, Gdk, Pango
 from gi.repository import GObject
 from generalFunctions import *
+from gtkComponents.SmartFileChooserDialog import SmartFileChooserDialog
 
 class TerminalHandler:
     def __init__(self, max_lines=10000):
@@ -664,7 +671,7 @@ class TerminalHandler:
         self.main_box.pack_start(self.overlay, True, True, 0)
 
     def on_save_clicked(self, button):
-        dialog = Gtk.FileChooserDialog(
+        dialog = SmartFileChooserDialog(
             title="Save Terminal Content",
             parent=button.get_toplevel(),
             action=Gtk.FileChooserAction.SAVE,

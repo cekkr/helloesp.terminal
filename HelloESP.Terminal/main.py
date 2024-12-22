@@ -8,6 +8,7 @@ import gi
 
 from MonitorWidget import MonitorWidget
 from StreamHandler import StreamHandler
+
 #from transfer_file import SerialCommandError
 
 gi.require_version('Gtk', '3.0')
@@ -478,7 +479,7 @@ class SerialInterface(Gtk.Window):
             self.show_status("Nessuna connessione seriale")
             return
 
-        dialog = Gtk.FileChooserDialog(
+        dialog = SmartFileChooserDialog(
             title="Seleziona file da caricare",
             parent=self,
             action=Gtk.FileChooserAction.OPEN
@@ -521,7 +522,7 @@ class SerialInterface(Gtk.Window):
 
         filename = model[treeiter][0]
 
-        dialog = Gtk.FileChooserDialog(
+        dialog = SmartFileChooserDialog(
             title="Salva file",
             parent=self,
             action=Gtk.FileChooserAction.SAVE
