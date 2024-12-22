@@ -97,6 +97,8 @@ class SerialInterface(Gtk.Window):
         self.terminal = self.terminal_handler.terminal
         vbox.pack_start(terminal_box, True, True, 0)
 
+        self.terminal_handler.add_save_button()
+
         #####
         #####
         #####

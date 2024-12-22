@@ -611,3 +611,218 @@ class TerminalHandler:
             self.terminal_buffer.delete(line_start, end_iter)
         except Exception as e:
             print(f"Error handling clear to start: {e}")
+
+    ###
+    ### Save button methods
+    ###
+
+    def add_save_button(self):
+        # Create an overlay container
+        self.overlay = Gtk.Overlay()
+
+        # Move the scrolled window from main_box to overlay
+        self.main_box.remove(self.scrolled_window)
+        self.overlay.add(self.scrolled_window)
+
+        # Create button container
+        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        button_box.set_halign(Gtk.Align.END)  # Align to right
+        button_box.set_valign(Gtk.Align.END)  # Align to bottom
+        button_box.set_margin_end(10)  # Right margin
+        button_box.set_margin_bottom(10)  # Bottom margin
+
+        # Create save button with styling
+        save_button = Gtk.Button.new_with_label("Save")
+        style_context = save_button.get_style_context()
+        css_provider = Gtk.CssProvider()
+        css = """
+        button {
+            background-color: rgba(46, 52, 54, 0.8);  /* Slightly transparent dark gray */
+            color: white;
+            border: 1px solid #555;
+            padding: 5px 10px;
+            border-radius: 4px;
+        }
+        button:hover {
+            background-color: rgba(46, 52, 54, 0.9);
+            border-color: #888;
+        }
+        """
+        css_provider.load_from_data(css.encode())
+        style_context.add_provider(
+            css_provider,
+            Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION
+        )
+
+        save_button.connect("clicked", self.on_save_clicked)
+        button_box.pack_start(save_button, False, False, 0)
+
+        # Add button_box as an overlay widget
+        self.overlay.add_overlay(button_box)
+
+        # Add overlay to main_box
+        self.main_box.pack_start(self.overlay, True, True, 0)
+
+    def on_save_clicked(self, button):
+        dialog = Gtk.FileChooserDialog(
+            title="Save Terminal Content",
+            parent=button.get_toplevel(),
+            action=Gtk.FileChooserAction.SAVE,
+            buttons=(
+                "Cancel", Gtk.ResponseType.CANCEL,
+                "Save", Gtk.ResponseType.OK
+            )
+        )
+
+        # Add file filters
+        html_filter = Gtk.FileFilter()
+        html_filter.set_name("HTML files")
+        html_filter.add_pattern("*.html")
+        dialog.add_filter(html_filter)
+
+        # Suggest default filename
+        dialog.set_current_name("terminal_output.html")
+
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            filepath = dialog.get_filename()
+            if not filepath.endswith('.html'):
+                filepath += '.html'
+            self.save_content_as_html(filepath)
+
+        dialog.destroy()
+
+    def save_content_as_html(self, filepath):
+        buffer = self.terminal_buffer
+        start = buffer.get_start_iter()
+        end = buffer.get_end_iter()
+
+        # Start HTML document with style
+        html_content = """<!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="UTF-8">
+        <style>
+            body {
+                background-color: #2E3436;
+                color: #FFFFFF;
+                font-family: monospace;
+                font-weight: bold;
+                font-size: 12pt;
+                white-space: pre-wrap;
+                line-height: 1.2;
+                margin: 20px;
+            }
+            .search-highlight {
+                background-color: #FFE066;
+                color: #000000;
+            }
+            .current-match {
+                background-color: #FF9933;
+                color: #000000;
+            }
+        </style>
+    </head>
+    <body>"""
+
+        current_tags = set()
+        last_pos = start.copy()
+
+        iter = start.copy()
+        while iter.compare(end) < 0:
+            # Get all tags at current position
+            tags = iter.get_tags()
+            new_tags = set(tag.get_property('name') for tag in tags if tag.get_property('name'))
+
+            # If tags changed, close previous span and start new one
+            if new_tags != current_tags:
+                # Get text up to this point
+                text = buffer.get_text(last_pos, iter, False)
+                if text:
+                    if current_tags:
+                        html_content += self.get_styled_span(text, current_tags)
+                    else:
+                        html_content += self.escape_html(text)
+
+                current_tags = new_tags
+                last_pos = iter.copy()
+
+            if not iter.forward_char():
+                break
+
+        # Handle remaining text
+        text = buffer.get_text(last_pos, end, False)
+        if text:
+            if current_tags:
+                html_content += self.get_styled_span(text, current_tags)
+            else:
+                html_content += self.escape_html(text)
+
+        # Close HTML document
+        html_content += "\n</body>\n</html>"
+
+        # Save to file
+        try:
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(html_content)
+        except Exception as e:
+            dialog = Gtk.MessageDialog(
+                parent=None,
+                flags=0,
+                message_type=Gtk.MessageType.ERROR,
+                buttons=Gtk.ButtonsType.OK,
+                text=f"Error saving file: {str(e)}"
+            )
+            dialog.run()
+            dialog.destroy()
+
+    def get_styled_span(self, text, tags):
+        """Convert GTK text tags to HTML style"""
+        style = []
+        classes = []
+
+        for tag_name in tags:
+            if tag_name == 'search-highlight':
+                classes.append('search-highlight')
+                continue
+            elif tag_name == 'current-match':
+                classes.append('current-match')
+                continue
+
+            if tag_name.startswith('fg_'):
+                color_code = tag_name[3:]
+                if color_code in self.colors:
+                    style.append(f"color: {self.colors[color_code]}")
+            elif tag_name.startswith('bg_'):
+                color_code = tag_name[3:]
+                if color_code in self.colors:
+                    style.append(f"background-color: {self.colors[color_code]}")
+            elif tag_name == 'bold':
+                style.append("font-weight: bold")
+            elif tag_name == 'italic':
+                style.append("font-style: italic")
+            elif tag_name == 'underline':
+                style.append("text-decoration: underline")
+            elif tag_name == 'strike':
+                style.append("text-decoration: line-through")
+            elif tag_name == 'dim':
+                style.append("opacity: 0.7")
+
+        escaped_text = self.escape_html(text)
+
+        if style or classes:
+            span_attrs = []
+            if style:
+                span_attrs.append(f'style="{"; ".join(style)}"')
+            if classes:
+                span_attrs.append(f'class="{" ".join(classes)}"')
+            return f'<span {" ".join(span_attrs)}>{escaped_text}</span>'
+        return escaped_text
+
+    def escape_html(self, text):
+        """Escape HTML special characters"""
+        return (text.replace('&', '&amp;')
+                .replace('<', '&lt;')
+                .replace('>', '&gt;')
+                .replace('"', '&quot;')
+                .replace("'", '&#39;'))
