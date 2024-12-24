@@ -59,3 +59,21 @@ def contains_alphanumeric(text):
 def print_err(explain, e):
     print("Error: ", explain, e)
     print(traceback.format_exc())
+
+
+def check_program_availability(program_name: str) -> bool:
+    """
+    Verifica se un programma è disponibile nella PATH del sistema.
+
+    Args:
+        program_name: Il nome del programma da cercare (es. "screen")
+
+    Returns:
+        bool: True se il programma è disponibile, False altrimenti
+    """
+    # shutil.which() cerca il programma in tutti i percorsi della PATH
+    # Restituisce il percorso completo se trovato, None altrimenti
+    program_path = shutil.which(program_name)
+
+    # Convertiamo il risultato in booleano
+    return program_path is not None

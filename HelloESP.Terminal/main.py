@@ -695,6 +695,9 @@ class SerialInterface(Gtk.Window):
 
         # Rimuoviamo il pipe con perl poiché potrebbe interferire con i codici ANSI
         cmd = script_path
+        
+        if check_program_availability("screen"):
+            cmd = "screen " + cmd
 
         try:
             process = subprocess.Popen(
