@@ -186,6 +186,8 @@ class SerialInterface(Gtk.Window):
                     if self.tracer is not None:
                         self.tracer.read_line(value)
 
+                elif (msg_type == "terminal_append_notrace"):
+                    self.terminal_handler.append_terminal(value)
                 elif(msg_type == "monitor_append"):
                     self.monitor_widget.append_text(value)
                 else:
