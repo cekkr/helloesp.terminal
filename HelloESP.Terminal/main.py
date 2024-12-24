@@ -696,8 +696,12 @@ class SerialInterface(Gtk.Window):
         # Rimuoviamo il pipe con perl poiché potrebbe interferire con i codici ANSI
         cmd = script_path
 
+        use_text = False
         if check_program_availability("screen") and False:
-            cmd = 'screen -r bash -c "' + cmd + '"'
+            cmd = 'screen bash -c "' + cmd + '; exec bash"'
+            use_text = True
+
+        stop_event = Event()
 
         try:
             process = subprocess.Popen(
@@ -705,34 +709,39 @@ class SerialInterface(Gtk.Window):
                 shell=shell,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
-                text=False,
+                text=use_text,
                 bufsize=1,  # Line buffering
                 env=env,
-                start_new_session=False,
+                start_new_session=True,
                 cwd=script_dir
             )
-
-            stop_event = Event()
 
             def flush_streams():
                 """Thread dedicato al flush periodico degli stream"""
                 try:
-                    while not stop_event.is_set() and process.poll() is None:
+                    while not stop_event.is_set():
                         try:
                             if process.stdout:
                                 process.stdout.flush()
                             if process.stderr:
                                 process.stderr.flush()
                         except:
-                            pass
+                            print("flush_streams exception")
                         time.sleep(1)  # Flush ogni secondo
+
+                    print("flush_streams ended")
                 except:
                     print("flush_streams blocked")
 
             def handle_output(pipe, output_type):
-                try:
-                    while not stop_event.is_set():  # Aggiungi controllo dell'evento
-                        try:
+                while not stop_event.is_set():  # Aggiungi controllo dell'evento
+                    try:
+                        if use_text:
+                            output = pipe.readline()
+                            if output:
+                                print("handle_output text: ", output)
+                                output_callback(output.rstrip('\n\r'), output_type)
+                        else:
                             raw_line = pipe.readline()
                             print("handle_output: ", raw_line)
                             if not raw_line:
@@ -740,11 +749,9 @@ class SerialInterface(Gtk.Window):
                             if output_callback:
                                 line = raw_line.decode('utf-8', errors='replace')
                                 output_callback(line.rstrip('\n\r'), output_type)
-                        except IOError:
-                            break  # Esci in modo pulito se lo stream è chiuso
-                except Exception as e:
-                    if output_callback and not process.poll():
-                        output_callback(f"Errore I/O: {str(e)}", 'stderr')
+                    except Exception as e:
+                        if output_callback and not process.poll():
+                            output_callback(f"Errore I/O: {str(e)}", 'stderr')
 
             def monitor_completion():
                 try:
@@ -757,6 +764,8 @@ class SerialInterface(Gtk.Window):
                             thread.join() #timeout=1.0
                         except:
                             print("thread.join exception")
+
+                    print("completion")
 
                     if completion_callback:
                         completion_callback(exit_code)
@@ -773,11 +782,15 @@ class SerialInterface(Gtk.Window):
                 Thread(target=flush_streams, daemon=True)
             ]
 
+            for thread in threads:
+                thread.start()
+
             return process
 
         except Exception as e:
             if output_callback:
                 output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
+                stop_event.set()
                 completion_callback(-1)
             raise
 
