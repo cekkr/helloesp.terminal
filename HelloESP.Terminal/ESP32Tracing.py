@@ -54,6 +54,7 @@ class ESP32BacktraceParser:
         self.current_backtrace: List[Dict] = []
 
         self.line_buffer = []
+        self.last_backtrace = ""
 
     def parse_backtrace_line(self, line: str) -> Optional[Dict[str, str]]:
         """
@@ -396,40 +397,6 @@ class ESP32BacktraceParser:
         self.results += what + '\n'
         #logger.error(what)
 
-    '''
-    def process_crash(self, crash_info: Dict): # deprecated
-        """
-        Processa e logga le informazioni complete sul crash.
-
-        Args:
-            crash_info: Dictionary con tutte le informazioni sul crash
-        """
-        self.log("\n=== ESP32 Crash Detected ===")
-        self.log(f"Timestamp: {crash_info['timestamp']}")
-        self.log(f"Crash Type: {crash_info['crash_type']}")
-        self.log(f"Crash Message: {crash_info['crash_message']}")
-
-        self.log("\n--- Context Before Crash ---")
-        for line in crash_info['context_before']:
-            self.log(f"Context: {line}")
-
-        self.log("\n--- Backtrace ---")
-        for frame in crash_info['backtrace']:
-            if 'function' in frame and 'file' in frame and 'line' in frame:
-                self.log(
-                    f"Frame {frame['frame']}: {frame['function']} "
-                    f"at {frame['file']}:{frame['line']} ({frame['address']})"
-                )
-            else:
-                self.log(f"Frame {frame['frame']}: {frame['address']}")
-
-        self.log("\n--- Context After Crash ---")
-        for line in crash_info['context_after']:
-            self.log(f"Context: {line}")
-
-        self.log("=========================\n")
-    '''
-
     def process_complete_backtrace(self, backtrace: List[Dict]):
         """
         Processa un backtrace completo.
@@ -437,6 +404,14 @@ class ESP32BacktraceParser:
         Args:
             backtrace: Lista di frame del backtrace
         """
+
+        backtrace_stamp = str(backtrace)
+        if self.last_backtrace == backtrace_stamp:
+            return
+        else:
+            self.last_backtrace = backtrace_stamp
+
+
         self.log("=== Backtrace Completo ===")
         for frame in backtrace:
             if type(frame) is str:
