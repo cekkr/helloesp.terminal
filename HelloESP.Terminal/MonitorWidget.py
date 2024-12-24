@@ -138,7 +138,7 @@ class MonitorWidget:
 
         if '!!end!!' in text:
             self.end_append()
-            text = text.replace('!!end!!')
+            text = text.replace('!!end!!', '')
 
         if not text:
             return
