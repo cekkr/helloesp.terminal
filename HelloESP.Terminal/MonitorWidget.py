@@ -13,6 +13,7 @@ class MonitorWidget:
         if self.use_terminal:
             # Create the monitor view
             self.terminal_handler = TerminalHandler()
+            self.terminal_handler.do_scroll_down = False
             self.terminal_box = self.terminal_handler.get_widget()
             self.monitor_view = self.terminal_handler.terminal
 
@@ -68,6 +69,9 @@ class MonitorWidget:
             self.file_box.pack_start(self.box, True, True, 0)
             self.box.hide()  # Initially hidden
 
+        self.current_state = ""
+        self.save_to_current_state = True
+
     def on_toggle_clicked(self, button):
         """Handle toggle button clicks"""
         if button.get_active():
@@ -77,23 +81,73 @@ class MonitorWidget:
 
     def update_monitor(self, text):
         """Update the monitor text"""
-        self.buffer.set_text(text)
-
-    def append_text(self, text):
-        """Append text to the monitor"""
-
-        if '!!clear!!' in text:
-            self.clear()
-            text = text.replace('!!clear!!', '')
-
         if self.terminal_handler:
-            self.terminal_handler.append_terminal(text+"\n")
+
+            # Salva la posizione dello scroll corrente
+            textview = self.terminal_handler.terminal
+            vadj = textview.get_vadjustment()
+            scroll_pos = vadj.get_value()
+
+            # Memorizza la posizione del cursore
+            buffer = self.terminal_handler.terminal_buffer
+            cursor_mark = buffer.get_insert()
+            cursor_iter = buffer.get_iter_at_mark(cursor_mark)
+            cursor_offset = cursor_iter.get_offset()
+
+            ####
+            self.terminal_handler.append_terminal(text + "\n")
+            ####
+
+            # Ripristina la posizione del cursore se possibile
+            try:
+                new_cursor_iter = buffer.get_iter_at_offset(cursor_offset)
+                buffer.place_cursor(new_cursor_iter)
+            except:
+                # Se l'offset non è più valido, non fare nulla
+                pass
+
+            # Assicurati che l'interfaccia sia aggiornata
+            while Gtk.events_pending():
+                Gtk.main_iteration()
+
+            # Ripristina la posizione dello scroll
+            vadj.set_value(scroll_pos)
+
+            # Forza l'aggiornamento della vista
+            textview.queue_draw()
         else:
             end_iter = self.buffer.get_end_iter()
             self.buffer.insert(end_iter, text + "\n")
             # Scroll to the bottom
             mark = self.buffer.create_mark(None, end_iter, False)
             self.monitor_view.scroll_to_mark(mark, 0.0, True, 0.0, 1.0)
+
+    def end_append(self):
+        if self.current_state:
+            self.clear()
+            self.update_monitor(self.current_state)
+            self.current_state = ''
+
+    def append_text(self, text):
+        """Append text to the monitor"""
+
+        if '!!clear!!' in text:
+            if not self.save_to_current_state:
+                self.clear()
+            text = text.replace('!!clear!!', '')
+
+        if '!!end!!' in text:
+            self.end_append()
+            text = text.replace('!!end!!')
+
+        if not text:
+            return
+
+        if self.save_to_current_state:
+            self.current_state += text + '\n'
+            return
+
+        self.update_monitor(text)
 
     def clear(self):
         """Clear all text from the monitor"""

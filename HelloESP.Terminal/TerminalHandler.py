@@ -21,6 +21,9 @@ class TerminalHandler:
         self.terminal = Gtk.TextView(buffer=self.terminal_buffer)
         self.scrollDown = True
 
+        self.do_scroll_down = True
+        self.distance_from_bottom_scroll_down = 30
+
         # Terminal styling
         rgba = Gdk.RGBA()
         rgba.parse("#2E3436")
@@ -242,7 +245,7 @@ class TerminalHandler:
 
                 # Check line limit after each update
                 if self.check_line_limit():
-                    self.scrollDown = True
+                    self.scrollDown = self.do_scroll_down
                     pass
 
             adj = self.vadj
@@ -458,8 +461,8 @@ class TerminalHandler:
         max_pos = adj.get_upper() - adj.get_page_size()
         distance_from_bottom = max_pos - current_pos
 
-        if distance_from_bottom <= 30 or max_pos <= 0:
-            self.scrollDown = True
+        if distance_from_bottom <= self.distance_from_bottom_scroll_down or max_pos <= 0:
+            self.scrollDown = self.do_scroll_down
         else:
             self.scrollDown = False
 
