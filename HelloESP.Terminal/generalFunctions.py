@@ -1,4 +1,5 @@
 import re
+import shutil
 import traceback
 
 def safe_decode(buffer_data, encoding='utf8', strip_ansi=True):

@@ -695,9 +695,9 @@ class SerialInterface(Gtk.Window):
 
         # Rimuoviamo il pipe con perl poiché potrebbe interferire con i codici ANSI
         cmd = script_path
-        
-        if check_program_availability("screen"):
-            cmd = "screen " + cmd
+
+        if check_program_availability("screen") and False:
+            cmd = 'screen -r bash -c "' + cmd + '"'
 
         try:
             process = subprocess.Popen(
@@ -708,7 +708,7 @@ class SerialInterface(Gtk.Window):
                 text=False,
                 bufsize=1,  # Line buffering
                 env=env,
-                start_new_session=True,
+                start_new_session=False,
                 cwd=script_dir
             )
 
@@ -734,6 +734,7 @@ class SerialInterface(Gtk.Window):
                     while not stop_event.is_set():  # Aggiungi controllo dell'evento
                         try:
                             raw_line = pipe.readline()
+                            print("handle_output: ", raw_line)
                             if not raw_line:
                                 break
                             if output_callback:
@@ -753,9 +754,9 @@ class SerialInterface(Gtk.Window):
                     # Attendi che i thread terminino
                     for thread in threads:
                         try:
-                            thread.join(timeout=1.0)
+                            thread.join() #timeout=1.0
                         except:
-                            pass
+                            print("thread.join exception")
 
                     if completion_callback:
                         completion_callback(exit_code)
@@ -771,9 +772,6 @@ class SerialInterface(Gtk.Window):
                 Thread(target=monitor_completion, daemon=True),
                 Thread(target=flush_streams, daemon=True)
             ]
-
-            for thread in threads:
-                thread.start()
 
             return process
 
