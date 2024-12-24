@@ -180,15 +180,15 @@ class SerialInterface(Gtk.Window):
             while not self.main_thread_queue.empty():
                 msg_type, value = self.main_thread_queue.get()
 
-                if(msg_type == "terminal_append"):
+                if msg_type in ["terminal_append", "append_terminal"]: # don't you worry about the dislexy
                     self.terminal_handler.append_terminal(value)
 
                     if self.tracer is not None:
                         self.tracer.read_line(value)
 
-                elif (msg_type == "terminal_append_notrace"):
+                elif msg_type == "terminal_append_notrace":
                     self.terminal_handler.append_terminal(value)
-                elif(msg_type == "monitor_append"):
+                elif msg_type == "monitor_append":
                     self.monitor_widget.append_text(value)
                 else:
                     print("msg_type not found: " , msg_type)
