@@ -671,6 +671,7 @@ class SerialInterface(Gtk.Window):
 
         script_path = os.path.abspath(script_path)
         script_dir = os.path.dirname(script_path)
+        script_name = os.path.basename(script_path)
 
         # Verifica esistenza script e imposta permessi
         if not os.path.exists(script_path):
@@ -705,6 +706,8 @@ class SerialInterface(Gtk.Window):
         if check_program_availability("screen") and False:
             cmd = 'screen bash -c "' + cmd + '; exec bash"'
             use_text = True
+        else:
+            cmd = './' + script_name
 
         stop_event = Event()
 
