@@ -79,10 +79,10 @@ def parse_esp32_log(line: str) -> dict:
 ######################################################################
 
 wait_for_response_in_use = False
-wfr_thisLine = ""
+#wfr_thisLine = ""
 def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, str]:
     global wait_for_response_in_use
-    global wfr_thisLine
+    #global wfr_thisLine
 
     if "SerialInterface" not in str(type(ser)):
         return False, ("ser is not SerialInterface but " + str(type(ser)))
@@ -107,6 +107,11 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         nonlocal stream_handler
         nonlocal orig_stream_handler_cbk
         global wait_for_response_in_use
+        #global wfr_thisLine
+
+        #if wfr_thisLine:
+        #    ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine))
+        #    wfr_thisLine = ''
 
         wait_for_response_in_use = False
 
@@ -116,13 +121,13 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
         stream_handler.default_callback = orig_stream_handler_cbk
 
     def on_received_normal(line):
-        global wfr_thisLine
+        #global wfr_thisLine
         nonlocal goOn_read
         nonlocal result_queue
 
         print("wait_for_response on_received_normal (",len(line),") bytes")
 
-        wfr_thisLine += line
+        wfr_thisLine = line
 
         res = None
         while '\n' in wfr_thisLine and res is None:
@@ -158,22 +163,31 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 print(line)
 
             # Process actual responses
-            if line.startswith("OK:"):
-                if res is not None:
-                    wfr_thisLine = line + '\n' + wfr_thisLine
+            if "OK:" in line:
+                spl = line.split('OK:')
+                lines = spl[1].split('\n')
+                line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
+                if line:
+                    wfr_thisLine += line + '\n'
                     break
-                res = [True, line[3:].strip()]
-            elif line.startswith("ERROR:"):
-                if res is not None:
-                    wfr_thisLine = line + '\n' + wfr_thisLine
+
+                res = [True, lines[0]]
+            elif "ERROR:" in line:
+                spl = line.split('ERROR:')
+                lines = spl[1].split('\n')
+                line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
+                if line:
+                    wfr_thisLine += line + '\n'
                     break
-                res = [False, line[6:].strip()]
-            else:
-                #ser.append_terminal(line)
-                ser.main_thread_queue.put(("self.append_terminal", line))
+
+                res = [False, lines[0]]
+
+            if line:
+                ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
 
             if res is not None:
                 goOn_read = False
+                ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine+'\n'))
 
         if res is not None:
             result_queue.put(("res", res))
@@ -183,8 +197,8 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
     stream_handler.default_callback = on_received_normal
     #stream_handler.exit_context()
 
-    def on_received_monitor(text):
-        ser.monitor_widget.append_text(text)
+    #def on_received_monitor(text):
+    #    ser.monitor_widget.append_text(text)
 
     #stream_handler = StreamHandler(on_received_normal)
     #stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
@@ -258,7 +272,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 print("processing ", len(value), " bytes")
                 stream_handler.process_string(value)
 
-        time.sleep(0.05)
+        time.sleep(0.1)
 
         if not wait_for_response_in_use:
             break

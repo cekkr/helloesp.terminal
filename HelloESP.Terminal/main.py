@@ -905,11 +905,13 @@ class SerialInterface(Gtk.Window):
                     if self.block_serial:
                         time.sleep(0.1)
                         continue
+                    ''' 
                     else:
                         if len(wfr_thisLine) > 0:
                             for line in wfr_thisLine.split('\n'):
                                 self.append_terminal(line)
                             wfr_thisLine = ''
+                    '''
 
                     text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
                     send(text)
@@ -921,7 +923,9 @@ class SerialInterface(Gtk.Window):
                 self.connect_button.set_label("Connetti")
                 return False
             except Exception as e:
-                print("read_serial Exception")
+                print("read_serial exception: ", e)
+                print("Exception type : ", type(e).__name__)
+                traceback.print_exc(file=sys.stdout)
                 #self.append_terminal(self.buffer)
                 #raise e
 
