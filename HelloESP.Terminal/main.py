@@ -929,12 +929,15 @@ class SerialInterface(Gtk.Window):
         return False
 
     def append_terminal(self, text):
+        text += '\n'
+
         if self.tracer is not None:
             self.tracer.read_line(text)
 
         self.stream_handler.process_string(text)
 
     def append_terminal_notrace(self, text):
+        text += '\n'
         self.stream_handler.process_string(text)
 
 def main():

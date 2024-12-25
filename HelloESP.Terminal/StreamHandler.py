@@ -79,69 +79,86 @@ class StreamHandler:
         self.end_by_start[start_tag] = end_tag
         self.start_by_end[end_tag] = start_tag
 
+    def get_context_by_end(self, _end):
+        for context in self.contexts:
+            start, end, cbk = context
+            if end == _end:
+                return cbk
+
+        return self.default_callback
+
     def _process_buffer(self) -> None:
         """
         Processa il buffer internamente, gestendo i contesti e chiamando
         le appropriate callback.
         """
+        prev_len = len(self.buffer)
         while len(self.buffer) > 0:
-            theres_tag = False
-            if self.current_context is None:
-                # Cerchiamo il prossimo tag di inizio
-                for start_tag, end_tag, callback in self.contexts:
-                    remaining_buffer = self.buffer
+            try:
+                theres_tag = False
+                if self.current_context is None:
+                    # Cerchiamo il prossimo tag di inizio
+                    for start_tag, end_tag, callback in self.contexts:
+                        remaining_buffer = self.buffer
 
-                    start_pos = self.buffer.find(start_tag)
-                    if start_pos >= 0:
+                        start_pos = self.buffer.find(start_tag)
+                        if start_pos >= 0:
+                            theres_tag = True
+                            res = self.buffer[:start_pos]
+                            if contains_alphanumeric(res):
+                                self.default_callback(res+'\n')
+
+                            self.buffer = self.buffer[start_pos + len(start_tag):]
+                            self.current_context = (end_tag, callback)
+
+                        if end_tag in remaining_buffer:
+                            theres_tag = True
+                            end_pos = self.buffer.find(end_tag)
+
+                            res = self.buffer[:end_pos]
+                            if contains_alphanumeric(res):
+                                callback(res)
+
+                            self.buffer = self.buffer[end_pos + len(end_tag):]
+                            self.current_context = None
+                else:
+                    # Siamo all'interno di un contesto, cerchiamo il tag di fine
+                    end_tag, callback = self.current_context
+                    if end_tag in self.buffer:
                         theres_tag = True
-                        res = self.buffer[:start_pos]
-                        if contains_alphanumeric(res):
-                            self.default_callback(res+'\n')
 
-                        self.buffer = self.buffer[start_pos + len(start_tag):]
-                        self.current_context = (end_tag, callback)
-
-                    if end_tag in remaining_buffer:
-                        theres_tag = True
+                        # Troviamo la posizione del tag di fine
                         end_pos = self.buffer.find(end_tag)
 
-                        res = self.buffer[:end_pos]
-                        if contains_alphanumeric(res):
-                            end_tag, cbk = self.current_context
-                            cbk(res)
+                        # Processiamo il testo nel contesto con la callback appropriata
+                        if end_pos >= 0:
+                            res = self.buffer[:end_pos]
+                            if contains_alphanumeric(res):
+                                callback(res)
 
+                        # Rimuoviamo il testo processato e il tag di fine
                         self.buffer = self.buffer[end_pos + len(end_tag):]
                         self.current_context = None
-            else:
-                # Siamo all'interno di un contesto, cerchiamo il tag di fine
-                end_tag, callback = self.current_context
-                if end_tag in self.buffer:
-                    theres_tag = True
 
-                    # Troviamo la posizione del tag di fine
-                    end_pos = self.buffer.find(end_tag)
+                if not theres_tag:
+                    if '\n' in self.buffer:
+                        spl = self.buffer.split('\n')
+                        self.buffer = spl.pop()
+                        curCtxEndTag, curCtxCbk = self.current_context if self.current_context is not None else (None, None)
+                        cbk = curCtxCbk if self.current_context is not None else self.default_callback
+                        for line in spl:
+                            if contains_alphanumeric(line):
+                                cbk(line+"\n")
+                    else:
+                        break
+            except Exception as e:
+                print(f"_process_buffer error: {e}")
+                print("Exception type : ", type(e).__name__)
+                traceback.print_exc(file=sys.stdout)
+                break
 
-                    # Processiamo il testo nel contesto con la callback appropriata
-                    if end_pos >= 0:
-                        res = self.buffer[:end_pos]
-                        if contains_alphanumeric(res):
-                            callback(res)
-
-                    # Rimuoviamo il testo processato e il tag di fine
-                    self.buffer = self.buffer[end_pos + len(end_tag):]
-                    self.current_context = None
-
-            if not theres_tag:
-                if '\n' in self.buffer:
-                    spl = self.buffer.split('\n')
-                    self.buffer = spl.pop()
-                    curCtxEndTag, curCtxCbk = self.current_context if self.current_context is not None else (None, None)
-                    cbk = curCtxCbk if self.current_context is not None else self.default_callback
-                    for line in spl:
-                        if contains_alphanumeric(line):
-                            cbk(line+"\n")
-                else:
-                    break
+            if prev_len == len(self.buffer):
+                break
 
     def _flush(self):
         if self.current_context is None:
