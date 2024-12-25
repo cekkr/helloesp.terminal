@@ -764,11 +764,13 @@ class SerialInterface(Gtk.Window):
                     # Attendi che i thread terminino
                     for thread in threads:
                         try:
-                            thread.join() #timeout=1.0
+                            thread.join(timeout=1.0) #timeout=1.0
                         except:
                             print("thread.join exception")
 
                     print("completion")
+
+                    time.sleep(2)
 
                     if completion_callback:
                         completion_callback(exit_code)
