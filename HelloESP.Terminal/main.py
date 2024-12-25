@@ -185,9 +185,12 @@ class SerialInterface(Gtk.Window):
 
                     if self.tracer is not None:
                         self.tracer.read_line(value)
-
+                elif msg_type == "self.append_terminal_notrace":
+                    self.append_terminal_notrace(value)
                 elif msg_type == "terminal_append_notrace":
                     self.terminal_handler.append_terminal(value)
+                elif msg_type == "self.append_terminal":
+                    self.append_terminal(value)
                 elif msg_type == "monitor_append":
                     self.monitor_widget.append_text(value)
                 else:
@@ -200,8 +203,7 @@ class SerialInterface(Gtk.Window):
 
     def init_receiver(self):
         def on_received_normal(text):
-            self.update_tracing(text)
-            self.main_thread_queue.put(("terminal_append", text))
+            self.main_thread_queue.put(("terminal_append_notrace", text))
 
         def on_received_monitor(text):
             self.main_thread_queue.put(("monitor_append", text))
@@ -932,6 +934,8 @@ class SerialInterface(Gtk.Window):
 
         self.stream_handler.process_string(text)
 
+    def append_terminal_notrace(self, text):
+        self.stream_handler.process_string(text)
 
 def main():
     win = SerialInterface()

@@ -170,7 +170,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 res = [False, line[6:].strip()]
             else:
                 #ser.append_terminal(line)
-                ser.main_thread_queue.put(("terminal_append", line+'\n'))
+                ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
 
             if res is not None:
                 goOn_read = False

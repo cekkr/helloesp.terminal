@@ -1,4 +1,6 @@
 import asyncio
+import sys
+import traceback
 from typing import Callable, Optional, List, Tuple
 import time
 import threading
@@ -154,12 +156,15 @@ class StreamHandler:
         self.current_context = None
         self.buffer = ''
 
+        while not self.input_queue.empty():
+            self.input_queue.get_nowait()
+
     def _process_loop(self):
         """
         Loop principale del thread di processing.
         """
         while not self._stop_event.is_set():
-            time.sleep(0.05)
+            time.sleep(0.1)
 
             try:
                 if self.input_queue.empty():
@@ -218,6 +223,9 @@ class StreamHandler:
 
             except Exception as e:
                 print(f"Errore nel thread di processing: {e}")
+                print("Exception type : ", type(e).__name__)
+                traceback.print_exc(file=sys.stdout)
+
                 self.current_context = None
 
     def has_start_tag(self, text):
