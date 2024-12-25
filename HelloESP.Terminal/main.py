@@ -377,6 +377,7 @@ class SerialInterface(Gtk.Window):
         def output(text, type):
             try:
                 #text = cont.decode()
+                #self.main_thread_queue.put(("append_terminal", text+'\n'))
                 self.append_terminal(text+"\n")
             except:
                 print("undecoded process input")
@@ -389,11 +390,11 @@ class SerialInterface(Gtk.Window):
                 else:
                     print("execute_script completion: ", res)
 
-                if type(res) is int and res >= 0:
-                    self.is_building = False
+                self.is_building = False
             except:
                 pass
 
+        self.self.stream_handler.clear()
         self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
 
 

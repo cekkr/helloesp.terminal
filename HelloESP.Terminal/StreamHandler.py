@@ -218,7 +218,7 @@ class StreamHandler:
 
             except Exception as e:
                 print(f"Errore nel thread di processing: {e}")
-                raise e
+                self.current_context = None
 
     def has_start_tag(self, text):
         for tag in self._start_tags:
