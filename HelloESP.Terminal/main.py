@@ -1,3 +1,4 @@
+import json
 import stat
 import subprocess
 import threading
@@ -8,8 +9,6 @@ import gi
 
 from MonitorWidget import MonitorWidget
 from StreamHandler import StreamHandler
-
-#from transfer_file import SerialCommandError
 
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
@@ -28,19 +27,19 @@ from transfer_file import *
 from ESP32Tracing import *
 from generalFunctions import *
 from TerminalHandler import *
-#from envVar import *
+
 
 class SerialInterface(Gtk.Window):
     def __init__(self):
         self.buffer = ""
         self.esp_path = os.getenv('IDF_PATH')
-        self.project_path = "/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
+        self.project_path = None #"/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
         self._espressif_path = None
 
         self.main_thread_queue = Queue()
 
         self.is_building = False
-        
+
         self.block_serial = False
         self.redirect_serial = False
         self.last_serial_output = None
@@ -51,47 +50,55 @@ class SerialInterface(Gtk.Window):
         self.set_border_width(10)
         self.set_default_size(1400, 1000)
 
-        # Variabile per la connessione seriale
+        # Serial connection variable
         self.serial_conn = None
         self.tracer = None
 
-        # Layout principale con pannello espandibile
+        # Main layout with expandable panel
         self.main_paned = Gtk.Paned(orientation=Gtk.Orientation.HORIZONTAL)
         self.add(self.main_paned)
 
-        # Contenitore principale per terminal e controlli
+        # Main container for terminal and controls
         vbox = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         self.main_paned.pack1(vbox, True, False)  # resize=True, shrink=False
 
-        # Area superiore per controlli
+        # Upper area for controls
         controls_box = Gtk.Box(spacing=6)
         vbox.pack_start(controls_box, False, False, 0)
 
-        # Combo box per le porte seriali
+        # Combo box for serial ports
         self.port_combo = Gtk.ComboBoxText()
         self.refresh_ports()
         controls_box.pack_start(self.port_combo, True, True, 0)
 
-        # Pulsante aggiorna porte
-        refresh_button = Gtk.Button(label="Aggiorna Porte")
+        # Refresh ports button
+        refresh_button = Gtk.Button(label="Refresh Ports")
         refresh_button.connect("clicked", self.on_refresh_clicked)
         controls_box.pack_start(refresh_button, False, False, 0)
 
-        # Pulsante connetti/disconnetti
-        self.connect_button = Gtk.Button(label="Connetti")
+        # Connect/disconnect button
+        self.connect_button = Gtk.Button(label="Connect")
         self.connect_button.connect("clicked", self.on_connect_clicked)
         controls_box.pack_start(self.connect_button, False, False, 0)
 
-        # Toggle per il pannello file
+        # Project path selection button
+        self.project_path_button = Gtk.Button(label="Select Project Path")
+        self.project_path_button.connect("clicked", self.on_project_path_clicked)
+        controls_box.pack_start(self.project_path_button, False, False, 0)
+
+        # Update button tooltip with current path
+        self._update_project_path_tooltip()
+
+        # File panel toggle
         self.files_toggle = Gtk.ToggleButton(label="File Manager")
         self.files_toggle.connect("toggled", self.on_files_toggle)
         controls_box.pack_start(self.files_toggle, False, False, 0)
 
-        self.dev_restart_button = Gtk.Button(label="Restart dev")
+        self.dev_restart_button = Gtk.Button(label="Restart Device")
         self.dev_restart_button.connect("clicked", self.on_dev_reset_clicked)
         controls_box.pack_start(self.dev_restart_button, False, False, 0)
 
-        # Area terminale
+        # Terminal area
         self.terminal_handler = TerminalHandler()
         terminal_box = self.terminal_handler.get_widget()
         self.add(terminal_box)
@@ -100,31 +107,7 @@ class SerialInterface(Gtk.Window):
 
         self.terminal_handler.add_save_button()
 
-        #####
-        #####
-        #####
-
-        # Imposta font monospace per il terminale
-        # Create a CSS provider
-        css_provider = Gtk.CssProvider()
-
-        # Define the CSS with the font settings
-        css = b"""
-        terminal {
-            font-family: monospace;
-        }
-        """
-
-        # Load the CSS
-        css_provider.load_from_data(css)
-
-        # Apply the CSS to the terminal widget
-        style_context = self.terminal.get_style_context()
-        style_context.add_provider(css_provider, Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION)
-
-        #scrolled_window.add(self.terminal)
-
-        # Area input
+        # Input area
         input_box = Gtk.Box(spacing=6)
         vbox.pack_start(input_box, False, False, 0)
 
@@ -132,7 +115,7 @@ class SerialInterface(Gtk.Window):
         self.input_entry.connect("activate", self.on_send_clicked)
         input_box.pack_start(self.input_entry, True, True, 0)
 
-        send_button = Gtk.Button(label="Invia")
+        send_button = Gtk.Button(label="Send")
         send_button.connect("clicked", self.on_send_clicked)
         input_box.pack_start(send_button, False, False, 0)
 
@@ -140,24 +123,24 @@ class SerialInterface(Gtk.Window):
         reset_button.connect("clicked", self.on_reset_clicked)
         input_box.pack_start(reset_button, False, False, 0)
 
-        # Area comandi
+        # Commands area
         cmd_box = Gtk.Box(spacing=6)
         vbox.pack_start(cmd_box, False, False, 0)
 
-        # Label per distinguere l'area comandi
-        cmd_label = Gtk.Label(label="Comandi:")
+        # Label to distinguish command area
+        cmd_label = Gtk.Label(label="Commands:")
         cmd_box.pack_start(cmd_label, False, False, 5)
 
         self.cmd_entry = Gtk.Entry()
         self.cmd_entry.connect("activate", self.on_execute_clicked)
-        self.cmd_entry.set_placeholder_text("Inserisci comando...")  # Testo suggerimento
+        self.cmd_entry.set_placeholder_text("Enter command...")  # Placeholder text
         cmd_box.pack_start(self.cmd_entry, True, True, 0)
 
-        execute_button = Gtk.Button(label="Esegui")
+        execute_button = Gtk.Button(label="Execute")
         execute_button.connect("clicked", self.on_execute_clicked)
         cmd_box.pack_start(execute_button, False, False, 0)
 
-        # Pannello File Manager
+        # File Manager Panel
         self.setup_file_manager()
         self.setup_backtrace_zone(vbox)
 
@@ -165,22 +148,117 @@ class SerialInterface(Gtk.Window):
         self.monitor_widget = MonitorWidget(self)
         controls_box.pack_start(self.monitor_widget.get_toggle_button(), False, False, 0)
 
-        # Test del monitor
+        # Monitor test
         self.monitor_widget.append_text("Tasks monitor")
 
-        #####
         GLib.timeout_add(50, self.check_main_thread_queue)
 
-    ###
-    ###
-    ###
+    def setup_backtrace_zone(self, parent_box):
+        self.backtrace_parent_box = parent_box
+        TRACEBACK_AREA_HEIGHT = 300
+
+        # Create toggle button
+        self.backtrace_toggle_button = Gtk.ToggleButton(label="Show Traceback")
+        self.backtrace_toggle_button.connect("toggled", self.backtrace_on_toggle_button_clicked)
+        self.backtrace_parent_box.pack_start(self.backtrace_toggle_button, False, False, 0)
+
+        # Create container for traceback area
+        self.traceback_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+
+        # Horizontal box for textbox and Check button
+        self.backtrace_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
+        # Entry for traceback input
+        self.backtrace_entry = Gtk.Entry()
+        self.backtrace_input_box.pack_start(self.backtrace_entry, True, True, 0)
+
+        # Check button
+        self.backtrace_check_button = Gtk.Button(label="Check traceback")
+        self.backtrace_check_button.connect("clicked", self.backtrace_on_check_clicked)
+        self.backtrace_input_box.pack_start(self.backtrace_check_button, False, False, 0)
+
+        self.traceback_box.pack_start(self.backtrace_input_box, False, False, 0)
+
+    def setup_file_manager(self):
+        """Setup of the file management panel"""
+        file_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        self.main_paned.pack2(file_box, False, False)  # resize=False, shrink=False
+
+        # Compile zone
+        compile_button_box = Gtk.Box(spacing=6)
+        file_box.pack_start(compile_button_box, False, False, 0)
+
+        btn_build = Gtk.Button(label="Build")
+        btn_build.connect("clicked", self.on_build)
+        compile_button_box.pack_start(btn_build, True, True, 0)
+
+        # Header label
+        header = Gtk.Label(label="File Manager")
+        header.set_markup("<b>File Manager</b>")
+        file_box.pack_start(header, False, False, 5)
+
+        # Action buttons
+        button_box = Gtk.Box(spacing=6)
+        file_box.pack_start(button_box, False, False, 0)
+
+        refresh_files_btn = Gtk.Button(label="Refresh")
+        refresh_files_btn.connect("clicked", self.on_refresh_files)
+        button_box.pack_start(refresh_files_btn, True, True, 0)
+
+        upload_btn = Gtk.Button(label="Upload")
+        upload_btn.connect("clicked", self.on_upload_file)
+        button_box.pack_start(upload_btn, True, True, 0)
+
+        download_btn = Gtk.Button(label="Download")
+        download_btn.connect("clicked", self.on_download_file)
+        button_box.pack_start(download_btn, True, True, 0)
+
+        delete_btn = Gtk.Button(label="Delete")
+        delete_btn.connect("clicked", self.on_delete_file)
+        button_box.pack_start(delete_btn, True, True, 0)
+
+        # File list on device
+        scrolled = Gtk.ScrolledWindow()
+        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        file_box.pack_start(scrolled, True, True, 0)
+
+        # Store for file list: name, size, modification date
+        self.files_store = Gtk.ListStore(str, str, str)
+
+        self.files_view = Gtk.TreeView(model=self.files_store)
+        self.files_view.set_headers_visible(True)
+
+        # Columns
+        renderer = Gtk.CellRendererText()
+        column = Gtk.TreeViewColumn("Name", renderer, text=0)
+        column.set_resizable(True)
+        column.set_min_width(150)
+        self.files_view.append_column(column)
+
+        renderer = Gtk.CellRendererText()
+        column = Gtk.TreeViewColumn("Size", renderer, text=1)
+        self.files_view.append_column(column)
+
+        renderer = Gtk.CellRendererText()
+        column = Gtk.TreeViewColumn("Date", renderer, text=2)
+        self.files_view.append_column(column)
+
+        scrolled.add(self.files_view)
+
+        # Operations status area
+        self.status_bar = Gtk.Statusbar()
+        file_box.pack_start(self.status_bar, False, False, 0)
+
+        ###
+        ###
+        ###
 
     def check_main_thread_queue(self):
         try:
             while not self.main_thread_queue.empty():
                 msg_type, value = self.main_thread_queue.get()
 
-                if msg_type in ["terminal_append", "append_terminal"]: # don't you worry about the dislexy
+                if msg_type in ["terminal_append", "append_terminal"]:  # don't you worry about the dislexy
                     self.terminal_handler.append_terminal(value)
 
                     if self.tracer is not None:
@@ -196,7 +274,7 @@ class SerialInterface(Gtk.Window):
                 elif msg_type == "self.on_connect_clicked":
                     self.on_connect_clicked(None)
                 else:
-                    print("msg_type not found: " , msg_type)
+                    print("msg_type not found: ", msg_type)
 
         except Exception as e:
             print("check_main_thread_queue: ", str(e))
@@ -213,163 +291,136 @@ class SerialInterface(Gtk.Window):
         self.stream_handler = StreamHandler(on_received_normal)
         self.stream_handler.add_context("!!TASKMONITOR!!", "!!TASKMONITOREND!!", on_received_monitor)
 
+
     ###
+    ### Project path
     ###
-    ###
 
-    def setup_backtrace_zone(self, parent_box):
-        ###
-        ### Backtrace area
-        ###
-        self.backtrace_parent_box = parent_box
+    def _check_project_path(self):
+        if self.project_path is None:
+            self.on_project_path_clicked(None)
 
-        TRACEBACK_AREA_HEIGHT = 300
+    def check_project_path_dialog(self):
+        if self.project_path is not None:
+            return True
 
-        # Creo il pulsante toggle
-        self.backtrace_toggle_button = Gtk.ToggleButton(label="Mostra Traceback")
-        self.backtrace_toggle_button.connect("toggled", self.backtrace_on_toggle_button_clicked)
-        self.backtrace_parent_box.pack_start(self.backtrace_toggle_button, False, False, 0)
+        """Show a dialog asking user to set the project path."""
+        dialog = Gtk.MessageDialog(
+            transient_for=self,
+            flags=0,
+            message_type=Gtk.MessageType.QUESTION,
+            buttons=Gtk.ButtonsType.OK_CANCEL,
+            text="Project path needed",
+        )
+        dialog.format_secondary_text("Project path not selected, do you want to set it?")
 
-        # Creo il contenitore per l'area traceback
-        self.traceback_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        response = dialog.run()
+        dialog.destroy()
 
-        # Box orizzontale per il textbox e il pulsante Check
-        self.backtrace_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        if response == Gtk.ResponseType.OK:
+            self.on_project_path_clicked(None)
+            if self.project_path is not None:
+                return True
 
-        # Entry per inserire il traceback
-        self.backtrace_entry = Gtk.Entry()
-        self.backtrace_input_box.pack_start(self.backtrace_entry, True, True, 0)
+        return False
 
-        # Pulsante Check
-        self.backtrace_check_button = Gtk.Button(label="Check traceback")
-        self.backtrace_check_button.connect("clicked", self.backtrace_on_check_clicked)
-        self.backtrace_input_box.pack_start(self.backtrace_check_button, False, False, 0)
+    def _load_project_path(self):
+        """Load the saved project path from configuration."""
+        config_file = os.path.join(str(Path.home()), '.gtk_smart_dialog_paths.json')
+        try:
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    paths = json.load(f)
+                    self.project_path = paths.get('project_path')
+        except Exception as e:
+            print(f"Error loading project path: {e}")
 
-        self.traceback_box.pack_start(self.backtrace_input_box, False, False, 0)
+    def _save_project_path(self):
+        """Save the current project path to configuration."""
+        config_file = os.path.join(str(Path.home()), '.gtk_smart_dialog_paths.json')
+        try:
+            # Load existing paths or create new dict
+            paths = {}
+            if os.path.exists(config_file):
+                with open(config_file, 'r') as f:
+                    paths = json.load(f)
 
-        # TextView per i risultati
-        scrolled_window = Gtk.ScrolledWindow()
-        scrolled_window.set_size_request(-1, TRACEBACK_AREA_HEIGHT)
+            # Update project path
+            paths['project_path'] = self.project_path
 
-        self.backtrace_textview = Gtk.TextView()
-        self.backtrace_textview.set_wrap_mode(Gtk.WrapMode.WORD)
-        self.backtrace_textview.set_editable(False)
-        scrolled_window.add(self.backtrace_textview)
+            # Save updated configuration
+            with open(config_file, 'w') as f:
+                json.dump(paths, f, indent=2)
+        except Exception as e:
+            print(f"Error saving project path: {e}")
 
-        self.traceback_box.pack_start(scrolled_window, True, True, 0)
+    def _update_project_path_tooltip(self):
+        """Update the project path button tooltip with current path."""
+        tooltip = f"Current project path: {self.project_path or 'Not set'}"
 
-        # Inizialmente nascondi l'area
-        self.backtrace_parent_box.pack_start(self.traceback_box, True, True, 0)
+        if self.project_path is not None:
+            self.init_tracing()
 
-        def hide_it():
-            time.sleep(2)
-            self.traceback_box.hide()
-            #self.backtrace_on_toggle_button_clicked(self.backtrace_toggle_button)
+        self.project_path_button.set_tooltip_text(tooltip)
 
-        # Crea e avvia il thread per l'attesa di 2 secondi
-        thread_attesa = threading.Thread(target=hide_it)
-        thread_attesa.start()
+    def on_project_path_clicked(self, button):
+        """Handle project path selection button click."""
+        dialog = SmartFileChooserDialog(
+            title="Select Project Path",
+            parent=self,
+            action=Gtk.FileChooserAction.SELECT_FOLDER,
+            buttons=("Cancel", Gtk.ResponseType.CANCEL, "Select", Gtk.ResponseType.OK)
+        )
 
-    def setup_file_manager(self):
-        """Setup del pannello di gestione file"""
-        file_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
-        self.main_paned.pack2(file_box, False, False)  # resize=False, shrink=False
+        # Set current project path if exists
+        if self.project_path and os.path.exists(self.project_path):
+            dialog.set_current_folder(self.project_path)
 
-        ###
-        ### Compile zone
-        ###
-        compile_button_box = Gtk.Box(spacing=6)
-        file_box.pack_start(compile_button_box, False, False, 0)
+        response = dialog.run()
+        if response == Gtk.ResponseType.OK:
+            self.project_path = dialog.get_filename()
 
-        btn_build = Gtk.Button(label="Build")
-        btn_build.connect("clicked", self.on_build)
-        compile_button_box.pack_start(btn_build, True, True, 0)
+            if not self.project_path.endsWith('hello-idf') and not self.project_path.endsWith('hello-idf/'):
+                if not self.project_path.endsWith('/'):
+                    self.project_path += '/'
+                self.project_path += 'hello-idf'
 
-        ###
-        ###
-        ###
-        # Label intestazione
-        header = Gtk.Label(label="File Manager")
-        header.set_markup("<b>File Manager</b>")
-        file_box.pack_start(header, False, False, 5)
+            self._save_project_path()
+            self._update_project_path_tooltip()
 
-        # Pulsanti azione
-        button_box = Gtk.Box(spacing=6)
-        file_box.pack_start(button_box, False, False, 0)
-
-        refresh_files_btn = Gtk.Button(label="Aggiorna")
-        refresh_files_btn.connect("clicked", self.on_refresh_files)
-        button_box.pack_start(refresh_files_btn, True, True, 0)
-
-        upload_btn = Gtk.Button(label="Carica")
-        upload_btn.connect("clicked", self.on_upload_file)
-        button_box.pack_start(upload_btn, True, True, 0)
-
-        download_btn = Gtk.Button(label="Scarica")
-        download_btn.connect("clicked", self.on_download_file)
-        button_box.pack_start(download_btn, True, True, 0)
-
-        delete_btn = Gtk.Button(label="Elimina")
-        delete_btn.connect("clicked", self.on_delete_file)
-        button_box.pack_start(delete_btn, True, True, 0)
-
-        # Lista file su device
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        file_box.pack_start(scrolled, True, True, 0)
-
-        # Store per la lista file: nome, dimensione, data modifica
-        self.files_store = Gtk.ListStore(str, str, str)
-
-        self.files_view = Gtk.TreeView(model=self.files_store)
-        self.files_view.set_headers_visible(True)
-
-        # Colonne
-        renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Nome", renderer, text=0)
-        column.set_resizable(True)
-        column.set_min_width(150)
-        self.files_view.append_column(column)
-
-        renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Dimensione", renderer, text=1)
-        self.files_view.append_column(column)
-
-        renderer = Gtk.CellRendererText()
-        column = Gtk.TreeViewColumn("Data", renderer, text=2)
-        self.files_view.append_column(column)
-
-        scrolled.add(self.files_view)
-
-        # Area stato operazioni
-        self.status_bar = Gtk.Statusbar()
-        file_box.pack_start(self.status_bar, False, False, 0)
+        dialog.destroy()
 
     ###
     ###
     ###
 
     def backtrace_on_toggle_button_clicked(self, button):
+        if not self.check_project_path_dialog():
+            return
+
         if button.get_active():
             self.traceback_box.show_all()
-            button.set_label("Nascondi Traceback")
+            button.set_label("Hide Traceback")
         else:
             self.traceback_box.hide()
-            button.set_label("Mostra Traceback")
+            button.set_label("Show Traceback")
 
     def backtrace_on_check_clicked(self, button):
         # Qui puoi implementare la logica per processare il traceback
         input_text = self.backtrace_entry.get_text()
         buffer = self.backtrace_textview.get_buffer()
         input_text = input_text.replace('\\n', '\n')
-        buffer.set_text(f"Analisi del traceback:\n{input_text}")
+        buffer.set_text(f"Traceback analysis:\n{input_text}")
 
         res = self.tracer.read_line_thread(input_text)
-        buffer.set_text(f"Analisi del traceback:\n{res}")
+        buffer.set_text(f"Traceback analysis:\n{res}")
 
 
     def on_build(self, button):
-        #self.on_reset_clicked(button)
+        if not self.check_project_path_dialog():
+            return
+
+        self.on_reset_clicked(button)
 
         if self.is_building:
             return
@@ -417,9 +468,9 @@ class SerialInterface(Gtk.Window):
         try:
             success, response = execute_command(self, command)
             if success:
-                self.main_thread_queue.put(("append_terminal", f"Comando eseguito: {command}\nRisposta: {response}\n"))
+                self.main_thread_queue.put(("append_terminal", f"Command successful ({command}): {response}\n"))
             else:
-                self.main_thread_queue.put(("append_terminal", f"Errore nell'esecuzione del comando: {response}\n"))
+                self.main_thread_queue.put(("append_terminal", f"Command error ({command}): {response}\n"))
         except Exception as e:
             self.append_terminal(f"Execute command error: {str(e)}\n")
             if __debug__:
@@ -446,7 +497,7 @@ class SerialInterface(Gtk.Window):
     def refresh_file_list(self):
         """Aggiorna la lista dei file sul device"""
         if not self.serial_conn:
-            self.show_status("Nessuna connessione seriale")
+            self.show_status("No serial connection")
             return
 
         try:
@@ -462,11 +513,11 @@ class SerialInterface(Gtk.Window):
                     size_str = f"{size / 1024 / 1024:.1f} MB"
 
                 self.files_store.append([filename, size_str, "-"])
-            self.show_status(f"Trovati {len(files)} file")
+            self.show_status(f"Found {len(files)} files")
         except SerialCommandError as e:
             cmd_end(self)
-            self.show_status(f"Errore: {str(e)}")
-            self.append_terminal(f"Errore lettura file: {str(e)}\n")
+            self.show_status(f"Error: {str(e)}")
+            self.append_terminal(f"Error while reading files: {str(e)}\n")
 
     def on_refresh_files(self, button):
         """Handler refresh lista file"""
@@ -477,23 +528,23 @@ class SerialInterface(Gtk.Window):
         try:
             success, msg = write_file(self, base_name, data)
             if success:
-                self.show_status(f"File {base_name} caricato con successo")
-                self.append_terminal(f"File caricato: {base_name}\n")
+                self.show_status(f"File {base_name} successfully loaded")
+                self.append_terminal(f"File loaded: {base_name}\n")
                 self.refresh_file_list()
             else:
-                self.show_status(f"Errore upload: {msg}")
-                self.append_terminal(f"Errore upload: {msg}\n")
+                self.show_status(f"Error upload: {msg}")
+                self.append_terminal(f"Error upload: {msg}\n")
         except:
             pass
 
     def on_upload_file(self, button):
         """Handler upload file"""
         if not self.serial_conn:
-            self.show_status("Nessuna connessione seriale")
+            self.show_status("No serial connection")
             return
 
         dialog = SmartFileChooserDialog(
-            title="Seleziona file da caricare",
+            title="Select the file to load",
             parent=self,
             action=Gtk.FileChooserAction.OPEN
         )
@@ -512,8 +563,8 @@ class SerialInterface(Gtk.Window):
                     threading.Thread(target=self.upload_file, args=(base_name, data,)).start()
 
             except Exception as e:
-                self.show_status(f"Errore: {str(e)}")
-                self.append_terminal(f"Errore upload: {str(e)}\n")
+                self.show_status(f"Error: {str(e)}")
+                self.append_terminal(f"Error upload: {str(e)}\n")
 
         dialog.destroy()
 
@@ -526,17 +577,17 @@ class SerialInterface(Gtk.Window):
         selection = self.files_view.get_selection()
         model, treeiter = selection.get_selected()
         if not treeiter:
-            self.show_status("Nessun file selezionato")
+            self.show_status("No file selected")
             return
 
         if not self.serial_conn:
-            self.show_status("Nessuna connessione seriale")
+            self.show_status("No serial connection")
             return
 
         filename = model[treeiter][0]
 
         dialog = SmartFileChooserDialog(
-            title="Salva file",
+            title="Save file",
             parent=self,
             action=Gtk.FileChooserAction.SAVE
         )
@@ -553,11 +604,11 @@ class SerialInterface(Gtk.Window):
                 data = read_file(self, filename)
                 with open(save_path, 'wb') as f:
                     f.write(data)
-                self.show_status(f"File {filename} scaricato con successo")
-                self.append_terminal(f"File scaricato: {filename}\n")
+                self.show_status(f"File {filename} succesfully downloaded")
+                self.append_terminal(f"File downloadedd: {filename}\n")
             except Exception as e:
-                self.show_status(f"Errore download: {str(e)}")
-                self.append_terminal(f"Errore download: {str(e)}\n")
+                self.show_status(f"Error download: {str(e)}")
+                self.append_terminal(f"Error download: {str(e)}\n")
 
         dialog.destroy()
 
@@ -566,11 +617,11 @@ class SerialInterface(Gtk.Window):
         selection = self.files_view.get_selection()
         model, treeiter = selection.get_selected()
         if not treeiter:
-            self.show_status("Nessun file selezionato")
+            self.show_status("No file selected")
             return
 
         if not self.serial_conn:
-            self.show_status("Nessuna connessione seriale")
+            self.show_status("No serial connection")
             return
 
         filename = model[treeiter][0]
@@ -580,10 +631,10 @@ class SerialInterface(Gtk.Window):
             flags=0,
             message_type=Gtk.MessageType.QUESTION,
             buttons=Gtk.ButtonsType.OK_CANCEL,
-            text=f"Eliminare il file {filename}?"
+            text=f"Delete file {filename}?"
         )
         dialog.format_secondary_text(
-            "Questa operazione non può essere annullata"
+            "This operation can't be reverted"
         )
 
         response = dialog.run()
@@ -591,15 +642,15 @@ class SerialInterface(Gtk.Window):
             try:
                 success, msg = delete_file(self, filename)
                 if success:
-                    self.show_status(f"File {filename} eliminato")
-                    self.append_terminal(f"File eliminato: {filename}\n")
+                    self.show_status(f"File {filename} deleted")
+                    self.append_terminal(f"File deleted: {filename}\n")
                     self.refresh_file_list()
                 else:
-                    self.show_status(f"Errore eliminazione: {msg}")
-                    self.append_terminal(f"Errore eliminazione: {msg}\n")
+                    self.show_status(f"Delete error: {msg}")
+                    self.append_terminal(f"Delete error: {msg}\n")
             except Exception as e:
-                self.show_status(f"Errore: {str(e)}")
-                self.append_terminal(f"Errore eliminazione: {str(e)}\n")
+                self.show_status(f"Error: {str(e)}")
+                self.append_terminal(f"Delete error: {str(e)}\n")
 
         dialog.destroy()
 
@@ -786,7 +837,7 @@ class SerialInterface(Gtk.Window):
                         completion_callback(exit_code)
                 except Exception as e:
                     if output_callback:
-                        output_callback(f"Errore nel monitoraggio: {str(e)}", 'stderr')
+                        output_callback(f"Error during execute_script monitoring: {str(e)}", 'stderr')
                         completion_callback(-1)
 
             # Avvia i thread includendo quello per il flush
@@ -804,7 +855,7 @@ class SerialInterface(Gtk.Window):
 
         except Exception as e:
             if output_callback:
-                output_callback(f"Errore nell'avvio del processo: {str(e)}", 'stderr')
+                output_callback(f"Start process error: {str(e)}", 'stderr')
                 stop_event.set()
                 completion_callback(-1)
             raise
@@ -815,7 +866,10 @@ class SerialInterface(Gtk.Window):
     ####
 
     def init_tracing(self):
-        self.tracer = ESP32BacktraceParser(serial=self.serial_conn)
+        if self.project_path is None:
+            return
+
+        self.tracer = ESP32BacktraceParser(serial=self)
 
         self.tracer.serialInterface = self
         self.tracer.set_debug_files(
@@ -853,21 +907,21 @@ class SerialInterface(Gtk.Window):
                     baudrate = 230400
 
                     self.serial_conn = serial.Serial(port, baudrate, timeout=0)
-                    self.connect_button.set_label("Disconnetti")
-                    self.append_terminal("Connesso a " + port + "\n")
+                    self.connect_button.set_label("Disconnect")
+                    self.append_terminal("Connect to " + port + "\n")
                     if self.files_toggle.get_active():
                         self.refresh_file_list()
                     GLib.timeout_add(100, self.read_serial)
 
                     self.init_tracing()
             except serial.SerialException as e:
-                self.append_terminal(f"Errore di connessione: {str(e)}\n")
+                self.append_terminal(f"Connection error: {str(e)}\n")
                 self.serial_conn = None
         else:
             self.serial_conn.close()
             self.serial_conn = None
-            self.connect_button.set_label("Connetti")
-            self.append_terminal("Disconnesso\n")
+            self.connect_button.set_label("Connect")
+            self.append_terminal("Disconnected\n")
             self.files_store.clear()
             self.stop_tracing()
 
@@ -878,10 +932,10 @@ class SerialInterface(Gtk.Window):
                 try:
                     data = (text + "\n").encode()
                     self.serial_conn.write(data)
-                    self.append_terminal(f"Inviato: {text}\n")
+                    self.append_terminal(f"Sent: {text}\n")
                     self.input_entry.set_text("")
                 except serial.SerialException as e:
-                    self.append_terminal(f"Errore di invio: {str(e)}\n")
+                    self.append_terminal(f"Send error: {str(e)}\n")
 
     def on_reset_clicked(self, button):
         buffer = self.terminal.get_buffer()
@@ -925,10 +979,10 @@ class SerialInterface(Gtk.Window):
                     send(text)
 
             except serial.SerialException as e:
-                self.append_terminal(f"Errore di lettura: {str(e)}\n")
+                self.append_terminal(f"Reading error: {str(e)}\n")
                 self.serial_conn.close()
                 self.serial_conn = None
-                self.connect_button.set_label("Connetti")
+                self.connect_button.set_label("Connect")
                 return False
             except Exception as e:
                 print("read_serial exception: ", e)

@@ -20,7 +20,7 @@ class ESP32BacktraceParser:
         if serial is not None:
             self.serial = serial
         else:
-            self.serial = serial.Serial(port, baudrate)
+            raise Exception("Nope, it don't create the serial")
 
         self.logger = logging.getLogger('ESP32_Monitor')
         self.addr2line_path = None
