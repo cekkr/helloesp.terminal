@@ -162,6 +162,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
             else:
                 print(line)
 
+            # move in global const
             ok = '!!OK!!:'
             error = '!!error!!:'
 
