@@ -162,9 +162,12 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
             else:
                 print(line)
 
+            ok = '!!OK!!:'
+            error = '!!error!!:'
+
             # Process actual responses
-            if "OK:" in line:
-                spl = line.split('OK:')
+            if ok in line:
+                spl = line.split(ok)
                 lines = spl[1].split('\n')
                 line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                 if line:
@@ -172,8 +175,8 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                     break
 
                 res = [True, lines[0]]
-            elif "ERROR:" in line:
-                spl = line.split('ERROR:')
+            elif error in line:
+                spl = line.split(error)
                 lines = spl[1].split('\n')
                 line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                 if line:
