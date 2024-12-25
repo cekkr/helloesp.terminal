@@ -193,6 +193,8 @@ class SerialInterface(Gtk.Window):
                     self.append_terminal(value)
                 elif msg_type == "monitor_append":
                     self.monitor_widget.append_text(value)
+                elif msg_type == "self.on_connect_clicked":
+                    self.on_connect_clicked(None)
                 else:
                     print("msg_type not found: " , msg_type)
 
@@ -389,7 +391,7 @@ class SerialInterface(Gtk.Window):
             try:
                 print("on_build completion: ", res)
                 if res == 0:
-                    self.on_connect_clicked(button)
+                    self.main_thread_queue.put(("self.on_connect_clicked", None))
                 else:
                     print("execute_script completion: ", res)
 
@@ -724,42 +726,45 @@ class SerialInterface(Gtk.Window):
                 cwd=script_dir
             )
 
-            def flush_streams():
-                """Thread dedicato al flush periodico degli stream"""
-                try:
-                    while not stop_event.is_set():
-                        try:
-                            if process.stdout:
-                                process.stdout.flush()
-                            if process.stderr:
-                                process.stderr.flush()
-                        except:
-                            print("flush_streams exception")
-                        time.sleep(1)  # Flush ogni secondo
-
-                    print("flush_streams ended")
-                except:
-                    print("flush_streams blocked")
-
             def handle_output(pipe, output_type):
-                while not stop_event.is_set():  # Aggiungi controllo dell'evento
+                """Modified handle_output with better pipe handling"""
+                while not stop_event.is_set():
                     try:
+                        if pipe.closed:
+                            break
+
                         if use_text:
                             output = pipe.readline()
-                            if output:
-                                print("handle_output text: ", output)
-                                output_callback(output.rstrip('\n\r'), output_type)
+                            if not output:  # Empty string means EOF
+                                break
+                            output_callback(output.rstrip('\n\r'), output_type)
                         else:
-                            raw_line = pipe.readline()
-                            print("handle_output: ", raw_line)
-                            if not raw_line:
+                            raw_line = pipe.read1(8192)  # Read chunks instead of lines
+                            if not raw_line:  # EOF
                                 break
                             if output_callback:
                                 line = raw_line.decode('utf-8', errors='replace')
-                                output_callback(line.rstrip('\n\r'), output_type)
-                    except Exception as e:
-                        if output_callback and not process.poll():
-                            output_callback(f"Errore I/O: {str(e)}", 'stderr')
+                                output_callback(line, output_type)
+
+                    except (IOError, OSError) as e:
+                        if not process.poll():  # Only report if process is still running
+                            output_callback(f"I/O Error: {str(e)}", 'stderr')
+                        break
+
+            def flush_streams():
+                """Modified flush_streams with safety checks"""
+                while not stop_event.is_set():
+                    try:
+                        if process.poll() is not None:  # Process ended
+                            break
+
+                        if process.stdout and not process.stdout.closed:
+                            process.stdout.flush()
+                        if process.stderr and not process.stderr.closed:
+                            process.stderr.flush()
+                    except (IOError, OSError):
+                        break
+                    time.sleep(1)
 
             def monitor_completion():
                 try:

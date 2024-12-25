@@ -1,3 +1,4 @@
+import gc
 import sys
 from pathlib import Path
 
@@ -218,6 +219,56 @@ class TerminalHandler:
         # Force a redraw of the TextView
         self.terminal.queue_draw()
 
+    def get_buffer_memory_size(self):
+        """
+        Calculate approximate memory usage of the text buffer in bytes.
+        This includes text content and tags.
+        """
+        start_iter = self.terminal_buffer.get_start_iter()
+        end_iter = self.terminal_buffer.get_end_iter()
+        text = self.terminal_buffer.get_text(start_iter, end_iter, True)
+
+        # Base size of text
+        memory_size = sys.getsizeof(text)
+
+        # Add approximate size of tags (this is an estimation)
+        memory_size += sys.getsizeof(self.tag_table.get_size())
+
+        return memory_size
+
+    def trim_buffer_by_memory(self, max_memory_bytes= 128 * 1024 * 1024):  # 128MB default
+        """
+        Trims the text buffer to keep memory usage below specified limit.
+
+        Args:
+            max_memory_bytes (int): Maximum memory usage allowed in bytes
+        """
+        buffer_size = self.get_buffer_memory_size()
+
+        if buffer_size > max_memory_bytes:
+            # Calculate how much we need to remove (aim to get to 75% of max)
+            target_size = int(max_memory_bytes * 0.75)
+
+            start_iter = self.terminal_buffer.get_start_iter()
+            end_iter = self.terminal_buffer.get_end_iter()
+            total_size = buffer_size
+
+            # Binary search to find approximately how much text to remove
+            while total_size > target_size:
+                mid_point = total_size // 2
+                mid_iter = self.terminal_buffer.get_iter_at_offset(mid_point)
+
+                # Delete first half
+                self.terminal_buffer.delete(start_iter, mid_iter)
+
+                # Recalculate size
+                start_iter = self.terminal_buffer.get_start_iter()
+                end_iter = self.terminal_buffer.get_end_iter()
+                total_size = self.get_buffer_memory_size()
+
+            # Force garbage collection after large deletion
+            gc.collect()
+
     def _process_updates(self):
         """Process pending text updates in the main loop"""
         if not self.pending_updates:
@@ -225,7 +276,7 @@ class TerminalHandler:
             return False
 
         try:
-            while self.pending_updates:
+            while len(self.pending_updates):
                 text, tags = self.pending_updates.pop(0)
 
                 end_iter = self.terminal_buffer.get_end_iter()
@@ -248,6 +299,8 @@ class TerminalHandler:
                     self.scrollDown = self.do_scroll_down
                     pass
 
+                self.trim_buffer_by_memory()
+
             adj = self.vadj
             if adj and self.scrollDown:
                 GObject.idle_add(
@@ -257,6 +310,8 @@ class TerminalHandler:
 
         except Exception as e:
             print(f"Error processing updates: {e}")
+            print("Exception type : ", type(e).__name__)
+            traceback.print_exc(file=sys.stdout)
 
         self.update_pending = False
         return False
