@@ -183,6 +183,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 res = [False, lines[0]]
 
             if line:
+                print("self.append_terminal: ", line)
                 ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
 
             if res is not None:
