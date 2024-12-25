@@ -365,7 +365,7 @@ class SerialInterface(Gtk.Window):
 
 
     def on_build(self, button):
-        self.on_reset_clicked(button)
+        #self.on_reset_clicked(button)
 
         if self.is_building:
             return
@@ -374,6 +374,7 @@ class SerialInterface(Gtk.Window):
 
         if self.serial_conn is not None:
             self.on_connect_clicked(button)
+
         def output(text, type):
             try:
                 #text = cont.decode()
@@ -394,7 +395,8 @@ class SerialInterface(Gtk.Window):
             except:
                 pass
 
-        self.self.stream_handler.clear()
+        #self.self.stream_handler.clear()
+        self.on_reset_clicked(None)
         self.execute_script(self.project_path+'/build.sh', output_callback=output, completion_callback=completion)
 
 
@@ -873,7 +875,7 @@ class SerialInterface(Gtk.Window):
         buffer = self.terminal.get_buffer()
         buffer.set_text("")
 
-        #self.stream_handler.clear()
+        self.stream_handler.clear()
         self.init_receiver()
 
     def read_serial(self):
@@ -923,6 +925,9 @@ class SerialInterface(Gtk.Window):
         return False
 
     def append_terminal(self, text):
+        if self.tracer is not None:
+            self.tracer.read_line(text)
+
         self.stream_handler.process_string(text)
 
 
