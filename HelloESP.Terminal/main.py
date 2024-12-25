@@ -33,12 +33,15 @@ class SerialInterface(Gtk.Window):
     def __init__(self):
         self.buffer = ""
         self.esp_path = os.getenv('IDF_PATH')
+
         self.project_path = None #"/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
+
         self._espressif_path = None
 
         self.main_thread_queue = Queue()
 
         self.is_building = False
+        self.backtrace_loaded = False
 
         self.block_serial = False
         self.redirect_serial = False
@@ -151,11 +154,17 @@ class SerialInterface(Gtk.Window):
         # Monitor test
         self.monitor_widget.append_text("Tasks monitor")
 
+        self._load_project_path()
+
         GLib.timeout_add(50, self.check_main_thread_queue)
 
-    def setup_backtrace_zone(self, parent_box):
-        self.backtrace_parent_box = parent_box
-        TRACEBACK_AREA_HEIGHT = 300
+    def setup_backtrace_zone(self, parent_box=None):
+        if parent_box is not None:
+            self.backtrace_parent_box = parent_box
+            self.TRACEBACK_AREA_HEIGHT = 300
+
+        if self.backtrace_loaded:
+            return
 
         # Create toggle button
         self.backtrace_toggle_button = Gtk.ToggleButton(label="Show Traceback")
@@ -178,6 +187,31 @@ class SerialInterface(Gtk.Window):
         self.backtrace_input_box.pack_start(self.backtrace_check_button, False, False, 0)
 
         self.traceback_box.pack_start(self.backtrace_input_box, False, False, 0)
+
+        # TextView per i risultati
+        scrolled_window = Gtk.ScrolledWindow()
+        scrolled_window.set_size_request(-1, self.TRACEBACK_AREA_HEIGHT)
+
+        self.backtrace_textview = Gtk.TextView()
+        self.backtrace_textview.set_wrap_mode(Gtk.WrapMode.WORD)
+        self.backtrace_textview.set_editable(False)
+        scrolled_window.add(self.backtrace_textview)
+
+        self.traceback_box.pack_start(scrolled_window, True, True, 0)
+
+        # Inizialmente nascondi l'area
+        self.backtrace_parent_box.pack_start(self.traceback_box, True, True, 0)
+
+        def hide_it():
+            time.sleep(2)
+            self.traceback_box.hide()
+            # self.backtrace_on_toggle_button_clicked(self.backtrace_toggle_button)
+
+        # Crea e avvia il thread per l'attesa di 2 secondi
+        thread_attesa = threading.Thread(target=hide_it)
+        thread_attesa.start()
+
+        self.backtrace_loaded = True
 
     def setup_file_manager(self):
         """Setup of the file management panel"""
@@ -380,8 +414,8 @@ class SerialInterface(Gtk.Window):
         if response == Gtk.ResponseType.OK:
             self.project_path = dialog.get_filename()
 
-            if not self.project_path.endsWith('hello-idf') and not self.project_path.endsWith('hello-idf/'):
-                if not self.project_path.endsWith('/'):
+            if not self.project_path.endswith('hello-idf') and not self.project_path.endswith('hello-idf/'):
+                if not self.project_path.endswith('/'):
                     self.project_path += '/'
                 self.project_path += 'hello-idf'
 
@@ -877,8 +911,8 @@ class SerialInterface(Gtk.Window):
             elf_file= self.project_path + "/build/hello-idf.elf"
         )
 
-        # Avvio del monitoraggio
-        # self.tracer.monitor_serial() # make it manual
+        #self.setup_backtrace_zone()
+
 
     def stop_tracing(self):
         self.tracer = None
