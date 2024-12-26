@@ -89,7 +89,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
     while wait_for_response_in_use:
         print("wait_for_response in use elsewhere")
-        time.sleep(0.01)
+        time.sleep(0.1)
 
     wait_for_response_in_use = True
 
