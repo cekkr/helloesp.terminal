@@ -80,7 +80,7 @@ def parse_esp32_log(line: str) -> dict:
 
 wait_for_response_in_use = False
 #wfr_thisLine = ""
-def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, str]:
+def wait_for_response(ser : SerialInterface, timeout: float = 5, waitEnd=False) -> Tuple[bool, str]:
     global wait_for_response_in_use
     #global wfr_thisLine
 
@@ -120,17 +120,19 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
         stream_handler.default_callback = orig_stream_handler_cbk
 
+    res = [] if waitEnd else None
+
     def on_received_normal(line):
         #global wfr_thisLine
         nonlocal goOn_read
         nonlocal result_queue
+        nonlocal res
 
         print("wait_for_response on_received_normal (",len(line),") bytes")
 
         wfr_thisLine = line
 
-        res = None
-        while '\n' in wfr_thisLine and res is None:
+        while '\n' in wfr_thisLine:
             spl = wfr_thisLine.split('\n')
             line = spl[0]
 
@@ -164,7 +166,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
 
             # move in global const
             ok = '!!OK!!:'
-            error = '!!error!!:'
+            error = '!!ERROR!!:'
 
             # Process actual responses
             if ok in line:
@@ -173,32 +175,43 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5) -> Tuple[bool, 
                 line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                 if line:
                     wfr_thisLine += line + '\n'
-                    break
 
-                res = [True, lines[0]]
+                line = lines[0]
+                if waitEnd:
+                    if '!!END!!' in line:
+                        result_queue.put(("res", [True, res]))
+                        break
+                    else:
+                        res.append(line)
+                else:
+                    res = [True, line]
+                    break
             elif error in line:
                 spl = line.split(error)
                 lines = spl[1].split('\n')
                 line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                 if line:
                     wfr_thisLine += line + '\n'
-                    break
 
                 res = [False, lines[0]]
 
-            if line:
-                print("self.append_terminal: ", line)
-                ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
+                if waitEnd:
+                    result_queue.put(("res", res))
+                break
+            else:
+                if line:
+                    print("self.append_terminal: ", line)
+                    ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
 
+                if res is not None:
+                    goOn_read = False
+                    ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine+'\n'))
+
+        if not waitEnd:
             if res is not None:
-                goOn_read = False
-                ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine+'\n'))
+                result_queue.put(("res", res))
 
-        if res is not None:
-            result_queue.put(("res", res))
-
-    on_received_normal("")
-
+    on_received_normal("\n")
     stream_handler.default_callback = on_received_normal
     #stream_handler.exit_context()
 
@@ -531,22 +544,23 @@ def list_files(ser : SerialInterface) -> List[Tuple[str, int]]:
         command = "$$$LIST_FILES$$$\n"
         send_buffer(ser, command)
 
-        success, files_str = wait_for_response(ser)
+        success, resp = wait_for_response(ser, waitEnd=True)
         if not success:
-            raise SerialCommandError(f"Failed to list files: {files_str}")
+            raise SerialCommandError(f"Failed to list files: {resp}")
 
-        split = files_str.split(':')
-        files_str = split[1]
-
-        # Parse filename,size pairs
         files = []
-        for entry in files_str.split(';'):
-            if entry:
-                try:
-                    fname, size_str = entry.split(',')
-                    files.append((fname, int(size_str)))
-                except ValueError:
-                    raise SerialCommandError(f"Invalid file entry format: {entry}")
+        if len(resp) > 0:
+            if '!!LIST!!' in resp[0]:
+                list = resp[1:]
+                for entry in list:
+                    try:
+                        fname, size_str = entry.split(',')
+                        files.append((fname, int(size_str)))
+                    except ValueError:
+                        raise SerialCommandError(f"Invalid file entry format: {entry}")
+
+            else:
+                raise SerialCommandError(f"Wrong incipit cmd: {resp[0]}")
 
         cmd_end(ser)
         return files
