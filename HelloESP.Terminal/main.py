@@ -988,8 +988,8 @@ class SerialInterface(Gtk.Window):
 
                 if text:
                     if not self.redirect_serial:
-                        self.append_terminal(text)
-                        self.last_serial_output = text.encode()
+                        self.main_thread_queue.put(('self.append_terminal', text))
+                        self.last_serial_output = text.encode() # ?? why
                     else:
                         if self.last_serial_output is None:
                             self.last_serial_output = text.encode()

@@ -181,7 +181,7 @@ class StreamHandler:
         Loop principale del thread di processing.
         """
         while not self._stop_event.is_set():
-            time.sleep(0.1)
+            time.sleep(0.01)
 
             try:
                 if self.input_queue.empty():
