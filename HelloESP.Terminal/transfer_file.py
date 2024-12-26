@@ -79,10 +79,9 @@ def parse_esp32_log(line: str) -> dict:
 ######################################################################
 
 wait_for_response_in_use = False
-#wfr_thisLine = ""
+wfr_thisLine = ""
 def wait_for_response(ser : SerialInterface, timeout: float = 5, waitEnd=False) -> Tuple[bool, str]:
     global wait_for_response_in_use
-    #global wfr_thisLine
 
     if "SerialInterface" not in str(type(ser)):
         return False, ("ser is not SerialInterface but " + str(type(ser)))
@@ -123,14 +122,14 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, waitEnd=False) 
     res = [] if waitEnd else None
 
     def on_received_normal(line):
-        #global wfr_thisLine
+        global wfr_thisLine
         nonlocal goOn_read
         nonlocal result_queue
         nonlocal res
 
         print("wait_for_response on_received_normal (",len(line),") bytes")
 
-        wfr_thisLine = line
+        wfr_thisLine += line
 
         while '\n' in wfr_thisLine:
             spl = wfr_thisLine.split('\n')
@@ -203,13 +202,17 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, waitEnd=False) 
                     print("self.append_terminal: ", line)
                     ser.main_thread_queue.put(("self.append_terminal", line+'\n'))
 
-                if res is not None:
-                    goOn_read = False
-                    ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine+'\n'))
+                if not waitEnd:
+                    if res is not None:
+                        goOn_read = False
+                        ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine+'\n'))
 
         if not waitEnd:
             if res is not None:
                 result_queue.put(("res", res))
+        else:
+            if wfr_thisLine and False:
+                ser.main_thread_queue.put(("self.append_terminal", wfr_thisLine + '\n'))
 
     on_received_normal("\n")
     stream_handler.default_callback = on_received_normal
@@ -287,7 +290,7 @@ def wait_for_response(ser : SerialInterface, timeout: float = 5, waitEnd=False) 
                 print("end receive result")
                 return value[0], value[1]
             elif msg_type == "process":
-                print("processing ", len(value), " bytes")
+                print("processing ", len(value), " bytes: ", value)
                 stream_handler.process_string(value)
 
         time.sleep(0.1)

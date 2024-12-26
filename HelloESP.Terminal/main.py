@@ -9,6 +9,7 @@ import gi
 
 from MonitorWidget import MonitorWidget
 from StreamHandler import StreamHandler
+from transfer_file import *
 
 gi.require_version('Gtk', '3.0')
 from gi.repository import Gtk, GLib, Pango
@@ -23,7 +24,7 @@ from pathlib import Path
 from typing import Optional, Dict, Union, Callable
 from threading import Thread
 
-from transfer_file import *
+from new_transfer_files import *
 from ESP32Tracing import *
 from generalFunctions import *
 from TerminalHandler import *
@@ -35,6 +36,8 @@ class SerialInterface(Gtk.Window):
         self.esp_path = os.getenv('IDF_PATH')
 
         self.project_path = None #"/Users/riccardo/Sources/GitHub/hello.esp32/hello-idf"
+
+        self.files = SerialCommandHandler(self)
 
         self._espressif_path = None
 
@@ -500,7 +503,7 @@ class SerialInterface(Gtk.Window):
 
     def thread_execute_command(self, command):
         try:
-            success, response = execute_command(self, command)
+            success, response = self.files.execute_command(command)
             if success:
                 self.main_thread_queue.put(("append_terminal", f"Command successful ({command}): {response}\n"))
             else:
@@ -535,7 +538,7 @@ class SerialInterface(Gtk.Window):
             return
 
         try:
-            files = list_files(self)
+            files = self.files.list_files()
             self.files_store.clear()
             for filename, size in files:
                 # Formatta dimensione in KB/MB
@@ -549,9 +552,9 @@ class SerialInterface(Gtk.Window):
                 self.files_store.append([filename, size_str, "-"])
             self.show_status(f"Found {len(files)} files")
         except SerialCommandError as e:
-            cmd_end(self)
             self.show_status(f"Error: {str(e)}")
             self.append_terminal(f"Error while reading files: {str(e)}\n")
+            self.files.cmd_end()
 
     def on_refresh_files(self, button):
         """Handler refresh lista file"""
@@ -560,7 +563,7 @@ class SerialInterface(Gtk.Window):
 
     def upload_file(self, base_name, data):
         try:
-            success, msg = write_file(self, base_name, data)
+            success, msg = self.files.write_file(base_name, data)
             if success:
                 self.show_status(f"File {base_name} successfully loaded")
                 self.append_terminal(f"File loaded: {base_name}\n")
@@ -674,7 +677,7 @@ class SerialInterface(Gtk.Window):
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
             try:
-                success, msg = delete_file(self, filename)
+                success, msg = self.delete_file(filename)
                 if success:
                     self.show_status(f"File {filename} deleted")
                     self.append_terminal(f"File deleted: {filename}\n")
@@ -979,7 +982,6 @@ class SerialInterface(Gtk.Window):
         self.init_receiver()
 
     def read_serial(self):
-        global wfr_thisLine
 
         if self.serial_conn and self.serial_conn.is_open:
             def send(text):
@@ -994,20 +996,18 @@ class SerialInterface(Gtk.Window):
                         if self.last_serial_output is None:
                             self.last_serial_output = text.encode()
                         else:
-                            self.last_serial_output.extend(text.encode())
+                            self.last_serial_output += text.encode()
 
             try:
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
                         time.sleep(0.1)
                         continue
-                    ''' 
                     else:
-                        if len(wfr_thisLine) > 0:
-                            for line in wfr_thisLine.split('\n'):
-                                self.append_terminal(line)
-                            wfr_thisLine = ''
-                    '''
+                        if len(self.files.wfr_thisLine) > 0:
+                            for line in self.files.wfr_thisLine.split('\n'):
+                                send(line)
+                            self.files.wfr_thisLine = ''
 
                     text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
                     send(text)
