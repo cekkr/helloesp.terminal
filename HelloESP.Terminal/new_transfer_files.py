@@ -12,6 +12,8 @@ from generalFunctions import contains_alphanumeric, safe_decode, print_err
 MAX_FILENAME_LENGTH = 255
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
+DEBUG_ON_TERMINAL = True
+
 ###
 ###
 ###
@@ -146,7 +148,7 @@ class SerialCommandHandler:
 
             self.wfr_thisLine += line
 
-            while '\n' in self.wfr_thisLine:
+            while len(self.wfr_thisLine) > 0:
                 spl = self.wfr_thisLine.split('\n')
                 line = spl[0]
 
@@ -186,13 +188,13 @@ class SerialCommandHandler:
 
                 # Process actual responses
                 if ok in line:
-                    spl = line.split(ok)
-                    lines = spl[1].split('\n')
-                    line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
-                    if line:
-                        self.wfr_thisLine += line + '\n'
+                    spl = ('🤷'+line).split(ok)
+                    #lines = spl[1].split('\n')
+                    #line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
+                    #if line:
+                    #    self.wfr_thisLine += line + '\n'
 
-                    line = lines[0]
+                    line = spl[1]
                     if waitEnd:
                         if '!!END!!' in line:
                             result_queue.put(("res", [True, res]))
@@ -203,13 +205,13 @@ class SerialCommandHandler:
                         res = [True, line]
                         break
                 elif error in line:
-                    spl = line.split(error)
-                    lines = spl[1].split('\n')
-                    line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
-                    if line:
-                        self.wfr_thisLine += line + '\n'
+                    spl = ('🤷'+line).split(error)
+                    #lines = spl[1].split('\n')
+                    #line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
+                    #if line:
+                    #    self.wfr_thisLine += line + '\n'
 
-                    res = [False, lines[0]]
+                    res = [False, spl[1]]
 
                     if waitEnd:
                         result_queue.put(("res", res))
@@ -219,10 +221,10 @@ class SerialCommandHandler:
                         print("self.append_terminal: ", line)
                         self.serial_interface.main_thread_queue.put(("self.append_terminal", line + '\n'))
 
-                    if not waitEnd:
-                        if res is not None:
-                            goOn_read = False
-                            self.serial_interface.main_thread_queue.put(("self.append_terminal", self.wfr_thisLine + '\n'))
+                if not waitEnd:
+                    if res is not None:
+                        goOn_read = False
+                        self.serial_interface.main_thread_queue.put(("self.append_terminal", self.wfr_thisLine + '\n'))
 
             if not waitEnd:
                 if res is not None:
@@ -298,6 +300,8 @@ class SerialCommandHandler:
                 elif msg_type == "res":
                     done()
                     print("end receive result: ", value)
+                    if DEBUG_ON_TERMINAL:
+                        self.serial_interface.main_thread_queue.put(("self.append_terminal", "wait_for_response: " + str(value)))
                     return value[0], value[1]
                 elif msg_type == "process":
                     print("processing ", len(value), " bytes: ", value)
