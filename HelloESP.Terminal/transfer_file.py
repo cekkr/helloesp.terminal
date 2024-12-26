@@ -555,6 +555,7 @@ def list_files(ser : SerialInterface) -> List[Tuple[str, int]]:
                 for entry in list:
                     try:
                         fname, size_str = entry.split(',')
+                        fname = fname[1:]
                         files.append((fname, int(size_str)))
                     except ValueError:
                         raise SerialCommandError(f"Invalid file entry format: {entry}")
