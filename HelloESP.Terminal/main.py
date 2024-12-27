@@ -159,7 +159,7 @@ class SerialInterface(Gtk.Window):
 
         self._load_project_path()
 
-        GLib.timeout_add(50, self.check_main_thread_queue)
+        GLib.timeout_add(10, self.check_main_thread_queue)
 
     def setup_backtrace_zone(self, parent_box=None):
         if parent_box is not None:
@@ -291,8 +291,8 @@ class SerialInterface(Gtk.Window):
         ###
 
     def check_main_thread_queue(self):
-        try:
-            while not self.main_thread_queue.empty():
+        while not self.main_thread_queue.empty():
+            try:
                 msg_type, value = self.main_thread_queue.get()
 
                 if msg_type in ["terminal_append", "append_terminal"]:  # don't you worry about the dislexy
@@ -313,8 +313,8 @@ class SerialInterface(Gtk.Window):
                 else:
                     print("msg_type not found: ", msg_type)
 
-        except Exception as e:
-            print("check_main_thread_queue: ", str(e))
+            except Exception as e:
+                print_err("check_main_thread_queue: ", e)
 
         return True
 
@@ -996,7 +996,7 @@ class SerialInterface(Gtk.Window):
             try:
                 while self.serial_conn.in_waiting:
                     if self.block_serial:
-                        time.sleep(0.1)
+                        time.sleep(0.01)
                         continue
                     else:
                         if len(self.files.wfr_thisLine) > 0:

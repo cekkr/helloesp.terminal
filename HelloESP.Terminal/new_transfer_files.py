@@ -108,7 +108,7 @@ class SerialCommandHandler:
     def wait_for_response(self, timeout: float = 5, waitEnd=False, waitForPong=False) -> Tuple[bool, str]:
         while self.wait_for_response_in_use:
             print("wait_for_response in use elsewhere")
-            time.sleep(0.1)
+            time.sleep(0.01)
 
         self.wait_for_response_in_use = True
 
@@ -149,7 +149,7 @@ class SerialCommandHandler:
 
             self.wfr_thisLine += line
 
-            while len(self.wfr_thisLine) > 0 and goOn_read:
+            while len(self.wfr_thisLine) > 0:
                 spl = self.wfr_thisLine.split('\n')
                 line = spl[0]
 
@@ -325,8 +325,6 @@ class SerialCommandHandler:
                     print("processing ", len(value), " bytes: ", value)
                     stream_handler.process_string(value)
 
-            time.sleep(0.1)
-
             if not self.wait_for_response_in_use:
                 break
 
@@ -372,17 +370,18 @@ class SerialCommandHandler:
         print("CMD: SILENCE_ON")
         ser.block_serial = True
         ser.serial_conn.write("$$$SILENCE_ON$$$\n".encode())
-        time.sleep(0.1)
+        time.sleep(0.01)
 
     def cmd_end(self):
         ser = self.serial_interface
 
         print("CMD: SILENCE_OFF")
         ser.serial_conn.write("$$$SILENCE_OFF$$$\n".encode())
-        time.sleep(0.1)
 
         if ser.block_serial:
             ser.block_serial = False
+
+        time.sleep(0.01)
 
     ###
     ###
@@ -532,7 +531,6 @@ class SerialCommandHandler:
             data = bytearray()
             chunk_size = 1024
 
-            self.serial_interface.block_serial = True
             while len(data) < file_size:
                 chunk = self.serial_interface.serial_conn.read(min(chunk_size, file_size - len(data)))
                 if not chunk:
@@ -542,7 +540,6 @@ class SerialCommandHandler:
                 # Send chunk acknowledgment
                 self.serial_interface.serial_conn.write(b"OK\n")
                 self.serial_interface.serial_conn.flush()
-            self.serial_interface.block_serial = False
 
             # Verify file hash
             received_hash = hashlib.md5(data).hexdigest()

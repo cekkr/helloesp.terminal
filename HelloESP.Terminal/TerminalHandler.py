@@ -301,12 +301,12 @@ class TerminalHandler:
 
                 self.trim_buffer_by_memory()
 
-            adj = self.vadj
-            if adj and self.scrollDown:
-                GObject.idle_add(
-                    lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
-                    priority=GObject.PRIORITY_LOW
-                )
+                adj = self.vadj
+                if adj and self.scrollDown:
+                    GObject.idle_add(
+                        lambda: adj.set_value(adj.get_upper() - adj.get_page_size()),
+                        priority=GObject.PRIORITY_LOW
+                    )
 
         except Exception as e:
             print(f"Error processing updates: {e}")
@@ -483,7 +483,7 @@ class TerminalHandler:
         self.pending_updates.append((text, tags))
         if not self.update_pending:
             self.update_pending = True
-            GObject.idle_add(self._process_updates, priority=GObject.PRIORITY_LOW)
+            GObject.idle_add(self._process_updates, priority=GObject.PRIORITY_HIGH)
 
     def normalize_ansi(self, text):
         """
