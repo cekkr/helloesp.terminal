@@ -655,10 +655,10 @@ class SerialCommandHandler:
                 return True, response
 
         except serial.SerialException as e:
-            cmd_end(ser)
+            self.cmd_end()
             raise SerialCommandError(f"Serial communication error: {str(e)}")
         except Exception as e:
-            cmd_end(ser)
+            self.cmd_end()
             print(f"Error executing command: {str(e)}")
             raise e
 
