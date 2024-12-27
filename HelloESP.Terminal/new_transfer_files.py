@@ -12,7 +12,7 @@ from generalFunctions import contains_alphanumeric, safe_decode, print_err
 MAX_FILENAME_LENGTH = 255
 MAX_FILE_SIZE = 100 * 1024 * 1024  # 100MB
 
-DEBUG_ON_TERMINAL = True
+DEBUG_ON_TERMINAL = False
 
 ###
 ###
@@ -317,6 +317,9 @@ class SerialCommandHandler:
                     if 'Chunk out of context' in value[1]:
                         print("debug")
 
+                    if 'OK:READY: Wait for chunks' in value[1]:
+                        print("debug")
+
                     return value[0], value[1]
                 elif msg_type == "process":
                     print("processing ", len(value), " bytes: ", value)
@@ -395,10 +398,12 @@ class SerialCommandHandler:
         try:
             validate_filename(filename)
             if not self.validate_file_size(data):
+                self.cmd_end()
                 return False, f"Invalid file size (max {MAX_FILE_SIZE} bytes)"
 
             file_hash = hashlib.md5(data).hexdigest()
-            if self.check_existing_file(filename, len(data)):
+            if self.check_existing_file(filename) == len(data):
+                self.cmd_end()
                 return False, "File exists with same size"
 
             """Send initial write command."""
@@ -409,6 +414,7 @@ class SerialCommandHandler:
 
             success, message = self.wait_for_response()
             if not success:
+                self.cmd_end()
                 return False, "Not ready for write: " + message
 
             print("Ready for chunks: ", message)
@@ -418,10 +424,6 @@ class SerialCommandHandler:
             total_chunks = (len(data) + chunk_size - 1) // chunk_size
 
             for chunk_num in range(total_chunks):
-                success, message = self.wait_for_response()
-                if not success:
-                    return False, "Not chunk number "+str(chunk_num)+": " + message
-
                 print("Writing chunk n " + str(chunk_num))
                 start = chunk_num * chunk_size
                 end = min(start + chunk_size, len(data))
@@ -437,6 +439,7 @@ class SerialCommandHandler:
                 success, message = self.wait_for_response()
 
                 if not success:
+                    self.cmd_end()
                     return False, f"Chunk prep failed: {message}"
 
                 print("write_file: Ready for chunk: ", message)
@@ -449,17 +452,22 @@ class SerialCommandHandler:
                 print("write_file: wait for reception message")
                 success, message = self.wait_for_response()
                 if not success:
+                    self.cmd_end()
                     return False, f"Chunk verification failed: {message}"
                 else:
                     print("Chunk sent: ", message)
 
-            # Verifica finale
-            command = "$$$VERIFY_FILE$$$\n"
-            self.send_buffer(command.encode('utf8'))
+            check_file = self.check_existing_file(filename)
+            if check_file == -1:
+                self.cmd_end()
+                return False, "File not save"
 
-            resp = self.wait_for_response()
+            if check_file != len(data):
+                self.cmd_end()
+                return False, "File has the wrong size: result is "+str(check_file)+", excepted: "+str(len(data))
+
             self.cmd_end()
-            return resp
+            return True, "File uploaded"
 
         except Exception as e:
             self.cmd_end()
@@ -470,7 +478,7 @@ class SerialCommandHandler:
         """Validate file size constraints."""
         return 0 < len(data) <= MAX_FILE_SIZE
 
-    def check_existing_file(self, filename: str, size: int) -> bool:
+    def check_existing_file(self, filename: str) -> int:
         """Check if file exists with same size."""
 
         command = f"$$$CHECK_FILE$$${filename}\n"
@@ -481,11 +489,11 @@ class SerialCommandHandler:
         if success:
             try:
                 existing_size = int(message.split(':')[0])
-                return existing_size == size
+                return existing_size
             except ValueError as e:
                 print_err("check_existing_file", e)
-                return False
-        return False
+                return -1
+        return -1
 
     def read_file(self, filename: str) -> bytes:
         """

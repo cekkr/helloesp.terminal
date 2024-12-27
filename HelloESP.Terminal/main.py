@@ -678,7 +678,7 @@ class SerialInterface(Gtk.Window):
         response = dialog.run()
         if response == Gtk.ResponseType.OK:
             try:
-                success, msg = self.delete_file(filename)
+                success, msg = self.files.delete_file(filename)
                 if success:
                     self.show_status(f"File {filename} deleted")
                     self.append_terminal(f"File deleted: {filename}\n")
@@ -1007,7 +1007,7 @@ class SerialInterface(Gtk.Window):
                     else:
                         if len(self.files.wfr_thisLine) > 0:
                             for line in self.files.wfr_thisLine.split('\n'):
-                                send(line)
+                                self.main_thread_queue.put(('append_terminal', line+'\n'))
                             self.files.wfr_thisLine = ''
 
                     text = self.serial_conn.read(self.serial_conn.in_waiting).decode('utf-8', errors='replace')
