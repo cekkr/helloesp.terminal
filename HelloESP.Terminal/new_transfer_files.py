@@ -77,10 +77,11 @@ def parse_esp32_log(line: str) -> dict:
         }
     return None
 
+###
+###
+###
 
-###
-###
-###
+PONG_BACK='!!!PONG!!!'
 
 class SerialCommandHandler:
     def __init__(self, serial_interface):
@@ -104,7 +105,7 @@ class SerialCommandHandler:
             }
         return None
 
-    def wait_for_response(self, timeout: float = 5, waitEnd=False) -> Tuple[bool, str]:
+    def wait_for_response(self, timeout: float = 5, waitEnd=False, waitForPong=False) -> Tuple[bool, str]:
         while self.wait_for_response_in_use:
             print("wait_for_response in use elsewhere")
             time.sleep(0.1)
@@ -188,13 +189,22 @@ class SerialCommandHandler:
 
                 # Process actual responses
                 if ok in line:
-                    spl = ('🤷'+line).split(ok)
+                    spl = (' '+line).split(ok)
                     #lines = spl[1].split('\n')
                     #line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                     #if line:
                     #    self.wfr_thisLine += line + '\n'
 
                     line = spl[1]
+
+                    pong_in_line = PONG_BACK in line
+                    if waitForPong and not pong_in_line:
+                        self.wfr_thisLine += '\n' + line
+                        continue
+
+                    if not waitForPong and pong_in_line:
+                        continue
+
                     if waitEnd:
                         if '!!END!!' in line:
                             result_queue.put(("res", [True, res]))
@@ -206,7 +216,7 @@ class SerialCommandHandler:
                         res = [True, line]
                         break
                 elif error in line:
-                    spl = ('🤷'+line).split(error)
+                    spl = (' '+line).split(error)
                     #lines = spl[1].split('\n')
                     #line = '\n'.join(lines[1:]) if len(lines) > 0 else ''
                     #if line:
@@ -220,7 +230,7 @@ class SerialCommandHandler:
                     break
                 else:
                     if line:
-                        print("self.append_terminal: ", line)
+                        print("append_terminal: ", line)
                         self.serial_interface.main_thread_queue.put(("append_terminal", line + '\n'))
 
                 if not waitEnd:
@@ -300,6 +310,13 @@ class SerialCommandHandler:
                     print("end receive result: ", value)
                     if DEBUG_ON_TERMINAL:
                         self.serial_interface.main_thread_queue.put(("append_terminal", "wait_for_response: " + str(value)+"\n"))
+
+                    if 'OK:READY: Ready for chunk' in value[1]:
+                        print("debug")
+
+                    if 'Chunk out of context' in value[1]:
+                        print("debug")
+
                     return value[0], value[1]
                 elif msg_type == "process":
                     print("processing ", len(value), " bytes: ", value)
@@ -325,7 +342,7 @@ class SerialCommandHandler:
         if ping:
             ser.write("$$$PING$$$\n".encode('utf8'))
             ser.flush()
-            success, msg = self.wait_for_response()
+            success, msg = self.wait_for_response(waitForPong=True)
 
             if not success:
                 print("Ping unsuccessful: " + msg)
@@ -384,18 +401,27 @@ class SerialCommandHandler:
             if self.check_existing_file(filename, len(data)):
                 return False, "File exists with same size"
 
-            # Inizia trasferimento
-            success, response = self.send_write_command(filename, len(data), file_hash)
-            if not success:
-                return False, "Not ready for write: " + response
+            """Send initial write command."""
+            size = len(data)
+            command = f"$$$WRITE_FILE$$${filename},{size},{file_hash}\n"
+            print("sending write command: ", command)
+            self.send_buffer(command, ping=False)
 
-            time.sleep(1)
+            success, message = self.wait_for_response()
+            if not success:
+                return False, "Not ready for write: " + message
+
+            print("Ready for chunks: ", message)
 
             # Suddividi in chunk e verifica
             chunk_size = 1024
             total_chunks = (len(data) + chunk_size - 1) // chunk_size
 
             for chunk_num in range(total_chunks):
+                success, message = self.wait_for_response()
+                if not success:
+                    return False, "Not chunk number "+str(chunk_num)+": " + message
+
                 print("Writing chunk n " + str(chunk_num))
                 start = chunk_num * chunk_size
                 end = min(start + chunk_size, len(data))
@@ -406,19 +432,21 @@ class SerialCommandHandler:
 
                 # Invia dimensione chunk e hash
                 command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
-                self.send_buffer(command, ping=True)
+                self.send_buffer(command, ping=False)
 
                 success, message = self.wait_for_response()
+
                 if not success:
                     return False, f"Chunk prep failed: {message}"
 
-                print("Ready for chunk: ", message)
+                print("write_file: Ready for chunk: ", message)
 
                 # Invia chunk
                 ser.write(chunk)
                 ser.flush()
 
                 # Verifica ricezione
+                print("write_file: wait for reception message")
                 success, message = self.wait_for_response()
                 if not success:
                     return False, f"Chunk verification failed: {message}"
@@ -458,15 +486,6 @@ class SerialCommandHandler:
                 print_err("check_existing_file", e)
                 return False
         return False
-
-    def send_write_command(self, filename: str, size: int, file_hash: str):
-        """Send initial write command."""
-        command = f"$$$WRITE_FILE$$${filename},{size},{file_hash}\n"
-        print("sending write command: ", command)
-        self.send_buffer(command)
-
-        success, message = self.wait_for_response()
-        return success, message
 
     def read_file(self, filename: str) -> bytes:
         """

@@ -571,8 +571,9 @@ class SerialInterface(Gtk.Window):
             else:
                 self.show_status(f"Error upload: {msg}")
                 self.append_terminal(f"Error upload: {msg}\n")
-        except:
-            pass
+        except Exception as e:
+            print_err("upload_file", e)
+            raise e
 
     def on_upload_file(self, button):
         """Handler upload file"""
@@ -990,8 +991,8 @@ class SerialInterface(Gtk.Window):
 
                 if text:
                     if not self.redirect_serial:
-                        self.main_thread_queue.put(('self.append_terminal', text))
-                        self.last_serial_output = text.encode() # ?? why
+                        self.main_thread_queue.put(('self.append_terminal', text+'\n'))
+                        #self.last_serial_output = text.encode() # ?? why
                     else:
                         if self.last_serial_output is None:
                             self.last_serial_output = text.encode()
