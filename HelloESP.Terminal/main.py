@@ -509,12 +509,7 @@ class SerialInterface(Gtk.Window):
             else:
                 self.main_thread_queue.put(("append_terminal", f"Command error ({command}): {response}\n"))
         except Exception as e:
-            self.append_terminal(f"Execute command error: {str(e)}\n")
-            if __debug__:
-                # raise e
-                pass
-            print("thread_execute_command: ", e)
-            raise e
+            print_err("thread_execute_command: ", e)
 
     def on_execute_clicked(self, button):
         command = self.cmd_entry.get_text()
@@ -573,7 +568,6 @@ class SerialInterface(Gtk.Window):
                 self.append_terminal(f"Error upload: {msg}\n")
         except Exception as e:
             print_err("upload_file", e)
-            raise e
 
     def on_upload_file(self, button):
         """Handler upload file"""
