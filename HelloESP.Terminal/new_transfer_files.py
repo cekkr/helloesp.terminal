@@ -148,7 +148,7 @@ class SerialCommandHandler:
 
             self.wfr_thisLine += line
 
-            while len(self.wfr_thisLine) > 0:
+            while len(self.wfr_thisLine) > 0 and goOn_read:
                 spl = self.wfr_thisLine.split('\n')
                 line = spl[0]
 
@@ -198,6 +198,7 @@ class SerialCommandHandler:
                     if waitEnd:
                         if '!!END!!' in line:
                             result_queue.put(("res", [True, res]))
+                            goOn_read = False
                             break
                         else:
                             res.append(line)
@@ -215,23 +216,20 @@ class SerialCommandHandler:
 
                     if waitEnd:
                         result_queue.put(("res", res))
+                    goOn_read = False
                     break
                 else:
                     if line:
                         print("self.append_terminal: ", line)
-                        self.serial_interface.main_thread_queue.put(("self.append_terminal", line + '\n'))
+                        self.serial_interface.main_thread_queue.put(("append_terminal", line + '\n'))
 
                 if not waitEnd:
                     if res is not None:
                         goOn_read = False
-                        self.serial_interface.main_thread_queue.put(("self.append_terminal", self.wfr_thisLine + '\n'))
 
             if not waitEnd:
                 if res is not None:
                     result_queue.put(("res", res))
-            else:
-                if self.wfr_thisLine and False:
-                    self.serial_interface.main_thread_queue.put(("self.append_terminal", self.wfr_thisLine + '\n'))
 
         on_received_normal("\n")
         stream_handler.default_callback = on_received_normal
@@ -301,7 +299,7 @@ class SerialCommandHandler:
                     done()
                     print("end receive result: ", value)
                     if DEBUG_ON_TERMINAL:
-                        self.serial_interface.main_thread_queue.put(("self.append_terminal", "wait_for_response: " + str(value)))
+                        self.serial_interface.main_thread_queue.put(("append_terminal", "wait_for_response: " + str(value)+"\n"))
                     return value[0], value[1]
                 elif msg_type == "process":
                     print("processing ", len(value), " bytes: ", value)
@@ -336,6 +334,10 @@ class SerialCommandHandler:
 
         if type(buffer) is str:
             buffer = buffer.encode('utf8')
+
+        if DEBUG_ON_TERMINAL:
+            print("send_buffer: ", buffer)
+            self.serial_interface.main_thread_queue.put(("append_terminal", "send_buffer: "+ buffer.decode() +"\n"))
 
         ser.write(buffer)
         ser.flush()
@@ -379,7 +381,7 @@ class SerialCommandHandler:
                 return False, f"Invalid file size (max {MAX_FILE_SIZE} bytes)"
 
             file_hash = hashlib.md5(data).hexdigest()
-            if not self.check_existing_file(filename, len(data)):
+            if self.check_existing_file(filename, len(data)):
                 return False, "File exists with same size"
 
             # Inizia trasferimento
@@ -387,13 +389,7 @@ class SerialCommandHandler:
             if not success:
                 return False, "Not ready for write: " + response
 
-            '''
-            success, status = wait_for_response(ser)
-            if not success:
-                return False, "Not ready for chunks: " + status
-
-            serInterface.append_terminal("Ready for chunks: " + status)
-            '''
+            time.sleep(1)
 
             # Suddividi in chunk e verifica
             chunk_size = 1024
@@ -410,7 +406,7 @@ class SerialCommandHandler:
 
                 # Invia dimensione chunk e hash
                 command = f"$$$CHUNK$$${len(chunk)},{chunk_hash}\n"
-                self.send_buffer(command, ping=False)
+                self.send_buffer(command, ping=True)
 
                 success, message = self.wait_for_response()
                 if not success:
@@ -449,22 +445,19 @@ class SerialCommandHandler:
     def check_existing_file(self, filename: str, size: int) -> bool:
         """Check if file exists with same size."""
 
-        self.cmd_start()
-
         command = f"$$$CHECK_FILE$$${filename}\n"
         self.send_buffer(command)
 
         success, message = self.wait_for_response()
 
-        self.cmd_end()
-
         if success:
             try:
                 existing_size = int(message.split(':')[0])
-                return existing_size != size
-            except ValueError:
-                return True
-        return True
+                return existing_size == size
+            except ValueError as e:
+                print_err("check_existing_file", e)
+                return False
+        return False
 
     def send_write_command(self, filename: str, size: int, file_hash: str):
         """Send initial write command."""
